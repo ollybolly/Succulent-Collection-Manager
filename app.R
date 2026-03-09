@@ -1442,12 +1442,24 @@ server <- function(input, output, session) {
   # ════════════════════════════════════════════════════════════════════════════
   # SEEDS — (all seed/germination server code preserved from Batch 2)
   # ════════════════════════════════════════════════════════════════════════════
+  # Helper: convert an optional dateInput value to a character string or NA.
+  # dateInput with value=NA returns an NA Date object; as.character() on that
+  # produces the *string* "NA" rather than true NA_character_, which breaks
+  # SQLite inserts. This guard catches both cases.
+  safe_opt_date <- function(x) {
+    if (is.null(x) || length(x) == 0) return(NA_character_)
+    if (inherits(x, "Date") && is.na(x)) return(NA_character_)
+    s <- suppressWarnings(as.character(x))
+    if (is.na(s) || trimws(s) == "" || trimws(s) == "NA") return(NA_character_)
+    s
+  }
+
   observeEvent(input$sw_submit,{
     req(nchar(trimws(input$sw_genus))>0)
     con <- get_con(); on.exit(dbDisconnect(con))
-    enc_opened  <- tryCatch(as.character(input$sw_enc_opened),  error=function(e) NA_character_)
-    enc_removed <- tryCatch(as.character(input$sw_enc_removed), error=function(e) NA_character_)
-    first_germ  <- tryCatch(as.character(input$sw_first_germ),  error=function(e) NA_character_)
+    enc_opened  <- safe_opt_date(input$sw_enc_opened)
+    enc_removed <- safe_opt_date(input$sw_enc_removed)
+    first_germ  <- safe_opt_date(input$sw_first_germ)
     dbExecute(con,"INSERT INTO sowings (genus,species,cultivar,sow_date,seed_origin,seed_age,n_seeds,date_first_germ,enclosure_type,enclosure_opened,enclosure_removed,heat_mat,heat_mat_notes,lights_notes,watering_notes,notes) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
       list(trimws(input$sw_genus),trimws(input$sw_species %||% ""),trimws(input$sw_cultivar %||% ""),
            as.character(input$sw_sow_date),trimws(input$sw_origin %||% ""),trimws(input$sw_seed_age %||% ""),
