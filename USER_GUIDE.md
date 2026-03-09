@@ -13,7 +13,7 @@ Welcome! This guide covers everything the app can do, written for collectors rat
 | ➕ Add a new plant | **Add Plant** tab |
 | 📏 Record a measurement | **Record Data** → Measurements |
 | 🌸 Log a flowering event | **Record Data** → Flowering |
-| 🪨 Record a soil mix change | **Record Data** → Soil Mix |
+| 🪨 Record a soil mix | **Record Data** → Soil Mix |
 | 📅 Log a repot, treatment, or other event | **Events & Notes** tab |
 | 📈 See how a plant has grown over time | **Growth Charts** tab |
 | 🌱 Manage a seed batch | **Seeds & Germination** tab |
