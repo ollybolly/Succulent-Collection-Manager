@@ -418,6 +418,34 @@ ui <- dashboardPage(
               ),
               column(7,h4("Soil mix history"),DTOutput("soil_mix_history"))
             )
+          ),
+
+          tabPanel(title=tagList(icon("camera")," Photos"),
+            fluidRow(
+              column(5,
+                h4("Upload photos"),
+                tags$p(tags$em("Attach one or more photos to any plant. Thumbnails appear in the collection table and plant detail panel.",style="color:#555;font-size:13px;")),
+                selectInput("ph_plant","Plant *",choices=NULL),
+                dateInput("ph_date","Date taken",value=Sys.Date()),
+                fileInput("ph_files","Choose photo(s)",
+                  accept=c("image/jpeg","image/png","image/jpg","image/webp"),
+                  multiple=TRUE,
+                  buttonLabel="Browse..."),
+                textInput("ph_caption","Caption (applies to all selected photos)"),
+                actionButton("ph_submit","Upload Photos",
+                  class="btn-success",icon=icon("camera")),
+                br(),br(),uiOutput("ph_feedback_ui")
+              ),
+              column(7,
+                h4("Photo library"),
+                selectInput("ph_filter","Filter by plant",choices=NULL),
+                uiOutput("ph_gallery"),
+                br(),
+                actionButton("ph_del_btn","Delete selected photo",
+                  class="btn-sm btn-danger",icon=icon("trash")),
+                uiOutput("ph_sel_ui")
+              )
+            )
           )
         ))
       ),
@@ -762,8 +790,9 @@ server <- function(input, output, session) {
 
   observe({
     ch <- plant_choices()
-    for (id in c("m_plant","fl_plant","sm_plant","e_plant","ch_plant","lbl_plant"))
+    for (id in c("m_plant","fl_plant","sm_plant","ph_plant","e_plant","ch_plant","lbl_plant"))
       updateSelectInput(session, id, choices=ch)
+    updateSelectInput(session, "ph_filter", choices=c("All"="", ch))
     updateSelectInput(session, "e_filter_plant", choices=c("All"="", ch))
   })
 
@@ -777,11 +806,27 @@ server <- function(input, output, session) {
   observe({
     refresh()
     con <- get_con(); on.exit(dbDisconnect(con))
-    updateSelectizeInput(session,"ap_family",   choices=distinct_vals(con,"plants","family"),server=TRUE)
-    updateSelectizeInput(session,"ap_origin_geo",choices=distinct_vals(con,"plants","origin_geo"),server=TRUE)
-    updateSelectizeInput(session,"ap_origin_soil",choices=distinct_vals(con,"plants","origin_soil"),server=TRUE)
-    updateSelectizeInput(session,"fl_colour",   choices=distinct_vals(con,"flowering","flower_colour"),server=TRUE)
-    updateSelectizeInput(session,"sw_origin",   choices=distinct_vals(con,"sowings","seed_origin"),server=TRUE)
+    # Client-side selectize: no server=TRUE so create=TRUE and empty default work correctly
+    updateSelectizeInput(session,"ap_family",
+      choices  = c("", distinct_vals(con,"plants","family")),
+      selected = "",
+      options  = list(create=TRUE, placeholder="e.g. Cactaceae"))
+    updateSelectizeInput(session,"ap_origin_geo",
+      choices  = c("", distinct_vals(con,"plants","origin_geo")),
+      selected = "",
+      options  = list(create=TRUE, placeholder="e.g. Andean foothills, Peru"))
+    updateSelectizeInput(session,"ap_origin_soil",
+      choices  = c("", distinct_vals(con,"plants","origin_soil")),
+      selected = "",
+      options  = list(create=TRUE, placeholder="e.g. limestone scree"))
+    updateSelectizeInput(session,"fl_colour",
+      choices  = c("", distinct_vals(con,"flowering","flower_colour")),
+      selected = "",
+      options  = list(create=TRUE, placeholder="e.g. cerise pink with white throat"))
+    updateSelectizeInput(session,"sw_origin",
+      choices  = c("", distinct_vals(con,"sowings","seed_origin")),
+      selected = "",
+      options  = list(create=TRUE, placeholder="e.g. Mesa Garden, own harvest 2023..."))
   })
 
 
@@ -804,10 +849,25 @@ server <- function(input, output, session) {
   output$collection_table <- renderDT({
     df <- filtered_plants()
     df$dormancy <- dplyr::recode(df$dormancy %||% "none",
-      "summer"="\u2600 Summer","winter"="\u2744 Winter","none"="\u2014",.default="\u2014")
-    df$sowing_id <- ifelse(!is.na(df$sowing_id),"\U0001f331","")
-    datatable(df,selection="multiple",rownames=FALSE,
-              options=list(pageLength=15,scrollX=TRUE,stateSave=TRUE))
+      "summer"="☀ Summer","winter"="❄ Winter","none"="—",.default="—")
+    df$sowing_id <- ifelse(!is.na(df$sowing_id),"🌱","")
+    con <- get_con(); on.exit(dbDisconnect(con))
+    thumbs <- dbGetQuery(con,
+      "SELECT plant_id, file_name FROM photos p1
+       WHERE photo_date = (SELECT MAX(photo_date) FROM photos p2 WHERE p2.plant_id=p1.plant_id)
+       GROUP BY plant_id")
+    thumb_map <- setNames(thumbs$file_name, as.character(thumbs$plant_id))
+    df$photo <- ifelse(
+      as.character(df$id) %in% names(thumb_map),
+      paste0('<img src="photos/', thumb_map[as.character(df$id)],
+             '" style="height:40px;width:40px;object-fit:cover;border-radius:4px;border:1px solid #ddd;" ',
+             'onerror="this.style.display:none">'),
+      "")
+    df <- df[, c("photo", setdiff(names(df), "photo"))]
+    datatable(df, selection="multiple", rownames=FALSE, escape=FALSE,
+              options=list(pageLength=15, scrollX=TRUE, stateSave=TRUE,
+                columnDefs=list(list(orderable=FALSE, targets=0),
+                                list(width="50px", targets=0))))
   })
 
   selected_plant_id <- reactive({
@@ -1107,6 +1167,25 @@ server <- function(input, output, session) {
   # ════════════════════════════════════════════════════════════════════════════
   output$ap_prefill_banner <- renderUI(NULL)
 
+  # Auto-fill family when genus is typed, if that genus already has a known family.
+  # Always overwrites whatever is in the family field so stale values from a
+  # previous entry are corrected automatically. If the genus is unknown, the
+  # field is left as-is so manually typed families are not wiped.
+  observeEvent(input$ap_genus, {
+    genus <- trimws(input$ap_genus %||% "")
+    if (nchar(genus) == 0) return()
+    con <- get_con(); on.exit(dbDisconnect(con))
+    known <- dbGetQuery(con,
+      "SELECT family FROM plants WHERE genus = ? COLLATE NOCASE AND family IS NOT NULL AND family != '' LIMIT 1",
+      list(genus))
+    if (nrow(known) > 0) {
+      updateSelectizeInput(session, "ap_family",
+        choices  = c("", distinct_vals(con, "plants", "family")),
+        selected = known$family[1],
+        options  = list(create = TRUE, placeholder = "e.g. Cactaceae"))
+    }
+  }, ignoreInit = TRUE)
+
   observeEvent(input$ap_submit,{
     req(nchar(trimws(input$ap_genus))>0)
     con <- get_con(); on.exit(dbDisconnect(con))
@@ -1127,9 +1206,9 @@ server <- function(input, output, session) {
     for(id in c("ap_toxicity","ap_notes")) updateTextAreaInput(session,id,value="")
     updateSelectInput(session,"ap_dormancy",selected="none")
     updateSelectInput(session,"ap_sowing",selected="")
-    updateSelectizeInput(session,"ap_family",selected="")
-    updateSelectizeInput(session,"ap_origin_geo",selected="")
-    updateSelectizeInput(session,"ap_origin_soil",selected="")
+    updateSelectizeInput(session,"ap_family",     selected="", options=list(create=TRUE))
+    updateSelectizeInput(session,"ap_origin_geo",  selected="", options=list(create=TRUE))
+    updateSelectizeInput(session,"ap_origin_soil", selected="", options=list(create=TRUE))
   })
 
   output$quick_stats <- renderText({
@@ -1267,6 +1346,100 @@ server <- function(input, output, session) {
     req(rows<=nrow(df)); dbExecute(con,"DELETE FROM flowering WHERE id=?",list(df$id[rows])); bump()
   })
 
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # RECORD > PHOTOS
+  # ════════════════════════════════════════════════════════════════════════════
+  ph_selected <- reactiveVal(NULL)
+
+  observeEvent(input$ph_submit, {
+    req(input$ph_plant != "")
+    files <- input$ph_files
+    if (is.null(files) || nrow(files) == 0) {
+      output$ph_feedback_ui <- renderUI(
+        tags$p("Please choose at least one photo file.", style="color:red;"))
+      return()
+    }
+    con <- get_con(); on.exit(dbDisconnect(con))
+    n_saved <- 0L
+    for (i in seq_len(nrow(files))) {
+      ext <- tolower(file_ext(files$name[i]))
+      if (!ext %in% c("jpg","jpeg","png","webp")) next
+      new_name <- sprintf("p%s_%s_%02d.%s",
+        input$ph_plant, format(Sys.time(), "%Y%m%d%H%M%S"), i, ext)
+      file.copy(files$datapath[i], file.path(PHOTO_DIR, new_name))
+      dbExecute(con,
+        "INSERT INTO photos (plant_id, photo_date, file_name, caption) VALUES (?,?,?,?)",
+        list(as.integer(input$ph_plant), as.character(input$ph_date),
+             new_name, trimws(input$ph_caption %||% "")))
+      n_saved <- n_saved + 1L
+    }
+    output$ph_feedback_ui <- renderUI(
+      tags$p(paste0("✓ ", n_saved, " photo(s) uploaded."),
+             style="color:#2e7d32;font-weight:bold;"))
+    ph_selected(NULL); bump()
+  })
+
+  output$ph_gallery <- renderUI({
+    refresh()
+    con <- get_con(); on.exit(dbDisconnect(con))
+    filt <- input$ph_filter %||% ""
+    q <- "SELECT p.id,p.file_name,p.photo_date,p.caption,pl.genus,pl.species
+          FROM photos p JOIN plants pl ON p.plant_id=pl.id"
+    if (nchar(filt) > 0) q <- paste0(q, sprintf(" WHERE p.plant_id=%s", filt))
+    q <- paste0(q, " ORDER BY p.photo_date DESC")
+    photos <- dbGetQuery(con, q)
+    if (nrow(photos) == 0)
+      return(tags$p("No photos yet.", style="color:#888;font-style:italic;"))
+    tags$div(style="display:flex;flex-wrap:wrap;gap:10px;",
+      lapply(seq_len(nrow(photos)), function(i) {
+        r      <- photos[i,]
+        fname  <- r$file_name
+        cap    <- if (!is.na(r$caption) && r$caption != "") r$caption else ""
+        pname  <- trimws(paste(r$genus, r$species %||% ""))
+        is_sel <- isTRUE(ph_selected() == fname)
+        brd    <- if (is_sel) "border:3px solid #2e7d32;" else "border:2px solid transparent;"
+        tags$div(style=paste0("text-align:center;cursor:pointer;width:110px;",brd,"border-radius:6px;padding:3px;"),
+          onclick=sprintf("Shiny.setInputValue('ph_click','%s',{priority:'event'})", fname),
+          tags$a(href=paste0("photos/",fname), target="_blank",
+            onclick="event.stopPropagation();",
+            tags$img(src=paste0("photos/",fname),
+              style="width:100px;height:100px;object-fit:cover;border-radius:4px;",
+              title=paste0(pname, if(nchar(cap)>0) paste0(" — ",cap) else ""))),
+          tags$div(style="font-size:10px;color:#555;margin-top:3px;word-break:break-word;", pname),
+          tags$div(style="font-size:10px;color:#999;", r$photo_date)
+        )
+      })
+    )
+  })
+
+  observeEvent(input$ph_click, {
+    clicked <- input$ph_click
+    if (isTRUE(ph_selected() == clicked)) ph_selected(NULL) else ph_selected(clicked)
+  })
+
+  output$ph_sel_ui <- renderUI({
+    sel <- ph_selected(); if (is.null(sel)) return(NULL)
+    tags$p(tags$em(paste0("Selected: ", sel)), style="font-size:12px;color:#555;margin-top:6px;")
+  })
+
+  observeEvent(input$ph_del_btn, {
+    sel <- ph_selected(); req(!is.null(sel))
+    showModal(modalDialog(title="Delete photo?",
+      tags$p("Permanently delete ", tags$strong(sel), "?"),
+      tags$p(tags$em("The image file and database record will both be removed.")),
+      footer=tagList(modalButton("Cancel"),
+        actionButton("ph_del_confirm","Delete",class="btn-danger"))))
+  })
+
+  observeEvent(input$ph_del_confirm, {
+    sel <- ph_selected(); req(!is.null(sel))
+    con <- get_con(); on.exit(dbDisconnect(con))
+    dbExecute(con, "DELETE FROM photos WHERE file_name=?", list(sel))
+    fpath <- file.path(PHOTO_DIR, sel)
+    if (file.exists(fpath)) file.remove(fpath)
+    removeModal(); ph_selected(NULL); bump()
+  })
 
   # ════════════════════════════════════════════════════════════════════════════
   # RECORD > SOIL MIX
@@ -1453,6 +1626,12 @@ server <- function(input, output, session) {
     if (is.na(s) || trimws(s) == "" || trimws(s) == "NA") return(NA_character_)
     s
   }
+
+  # Default first germination date to match sow date when sow date changes
+  observeEvent(input$sw_sow_date, {
+    req(!is.null(input$sw_sow_date), !is.na(input$sw_sow_date))
+    updateDateInput(session, "sw_first_germ", value = input$sw_sow_date)
+  }, ignoreInit = TRUE)
 
   observeEvent(input$sw_submit,{
     req(nchar(trimws(input$sw_genus))>0)
