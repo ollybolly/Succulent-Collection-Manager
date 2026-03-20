@@ -229,7 +229,7 @@ htmlEscape <- function(x) {
 ui <- dashboardPage(
   skin = "green",
   dashboardHeader(title = "\U0001f335 Collection Tracker"),
-  dashboardSidebar(sidebarMenu(
+  dashboardSidebar(sidebarMenu(id="sidebar",
     menuItem("Collection",        tabName="collection",  icon=icon("seedling")),
     menuItem("Add Plant",         tabName="add_plant",   icon=icon("plus")),
     menuItem("Record Data",       tabName="record_data", icon=icon("pen-to-square")),
@@ -266,20 +266,7 @@ ui <- dashboardPage(
                        max-width:110px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
       .gallery-date{font-size:10px;color:#aaa;}
       .gallery-filter{margin-bottom:12px;}
-      /* Lightbox overlay */
-      #lb-overlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;
-                  background:rgba(0,0,0,0.88);z-index:9999;justify-content:center;
-                  align-items:center;flex-direction:column;}
-      #lb-overlay.active{display:flex;}
-      #lb-img{max-width:90vw;max-height:80vh;border-radius:8px;box-shadow:0 4px 32px #000;}
-      #lb-caption{color:#eee;font-size:14px;margin-top:12px;text-align:center;max-width:80vw;}
-      #lb-close{position:fixed;top:18px;right:28px;color:#fff;font-size:36px;
-                cursor:pointer;line-height:1;z-index:10000;}
-      #lb-prev,#lb-next{position:fixed;top:50%;transform:translateY(-50%);
-                         color:#fff;font-size:48px;cursor:pointer;
-                         background:rgba(0,0,0,0.3);padding:4px 14px;border-radius:6px;
-                         user-select:none;z-index:10000;}
-      #lb-prev{left:12px;} #lb-next{right:12px;}
+
     "))),
 
     tabItems(
@@ -799,44 +786,6 @@ ui <- dashboardPage(
       # ══ GALLERY ══════════════════════════════════════════════════════════════
       tabItem(tabName="gallery",
         tags$div(
-          # Lightbox overlay (pure HTML/JS, no server round-trip)
-          tags$div(id="lb-overlay",
-            tags$span(id="lb-close", HTML("&times;"),
-              onclick="document.getElementById('lb-overlay').classList.remove('active')"),
-            tags$span(id="lb-prev", HTML("&#8249;"), onclick="lbStep(-1)"),
-            tags$img(id="lb-img", src=""),
-            tags$div(id="lb-caption",""),
-            tags$span(id="lb-next", HTML("&#8250;"), onclick="lbStep(1)"),
-            onclick="if(event.target===this)this.classList.remove('active')"
-          ),
-          tags$script(HTML("
-            var lbPhotos = [];
-            var lbIdx = 0;
-            function lbOpen(photos, idx) {
-              lbPhotos = photos; lbIdx = idx;
-              lbShow();
-              document.getElementById('lb-overlay').classList.add('active');
-            }
-            function lbShow() {
-              var p = lbPhotos[lbIdx];
-              document.getElementById('lb-img').src = p.src;
-              document.getElementById('lb-caption').innerHTML =
-                '<strong>' + p.name + '</strong>' +
-                (p.caption ? ' &mdash; ' + p.caption : '') +
-                '<br><span style=\'color:#aaa;font-size:12px;\'>' + p.date + '</span>';
-            }
-            function lbStep(dir) {
-              lbIdx = (lbIdx + dir + lbPhotos.length) % lbPhotos.length;
-              lbShow();
-            }
-            document.addEventListener('keydown', function(e) {
-              var ov = document.getElementById('lb-overlay');
-              if (!ov.classList.contains('active')) return;
-              if (e.key === 'ArrowRight') lbStep(1);
-              if (e.key === 'ArrowLeft')  lbStep(-1);
-              if (e.key === 'Escape') ov.classList.remove('active');
-            });
-          ")),
           fluidRow(
             box(width=12, title="Photo Gallery", status="success", solidHeader=TRUE,
               fluidRow(class="gallery-filter",
@@ -2304,157 +2253,225 @@ server <- function(input, output, session) {
     refresh()
     con <- get_con(); on.exit(dbDisconnect(con))
 
-    # Base plant query with filters
+    fam  <- input$gal_family %||% ""
+    gen  <- input$gal_genus  %||% ""
+    srch <- trimws(input$gal_search %||% "")
+
     q_plants <- "SELECT p.id, p.family, p.genus, p.species, p.cultivar
                  FROM plants p WHERE p.status='active'"
-    fam <- input$gal_family %||% ""
-    gen <- input$gal_genus  %||% ""
-    srch <- trimws(input$gal_search %||% "")
     if (nchar(fam)>0)  q_plants <- paste0(q_plants, sprintf(" AND p.family='%s'",  gsub("'","''",fam)))
     if (nchar(gen)>0)  q_plants <- paste0(q_plants, sprintf(" AND p.genus='%s'",   gsub("'","''",gen)))
     if (nchar(srch)>0) q_plants <- paste0(q_plants, sprintf(
       " AND (p.species LIKE '%%%1$s%%' OR p.cultivar LIKE '%%%1$s%%')", gsub("'","''",srch)))
     q_plants <- paste0(q_plants," ORDER BY p.family, p.genus, p.species")
-    plants <- dbGetQuery(con, q_plants)
+    plants   <- dbGetQuery(con, q_plants)
 
     if (nrow(plants)==0)
       return(tags$p("No plants match the current filter.",
         style="color:#888;font-style:italic;padding:20px;"))
 
-    # Fetch all photos for matching plants in one query
-    if (nrow(plants)>0) {
-      pid_list <- paste(plants$id, collapse=",")
-      all_photos <- dbGetQuery(con, sprintf(
-        "SELECT plant_id, file_name, photo_date, caption
-         FROM photos WHERE plant_id IN (%s) ORDER BY photo_date DESC", pid_list))
-    } else {
-      all_photos <- data.frame(plant_id=integer(),file_name=character(),
-                                photo_date=character(),caption=character())
-    }
+    pid_list   <- paste(plants$id, collapse=",")
+    all_photos <- dbGetQuery(con, sprintf(
+      "SELECT plant_id, file_name, photo_date, caption
+       FROM photos WHERE plant_id IN (%s) ORDER BY photo_date", pid_list))
 
     show_unphoto <- isTRUE(input$gal_unphoto)
 
-    # Group by family, then genus
-    families_present <- unique(plants$family)
-    families_present[is.na(families_present)|families_present==""] <- "(No family set)"
-    families_present <- sort(unique(families_present))
+    # ── Build a flat ordered list of ALL photos for the lightbox ─────────────
+    # This lets the user arrow through the entire (filtered) gallery.
+    all_ordered <- all_photos  # already ordered by plant then date
 
-    sections <- lapply(families_present, function(fam_name) {
-      fam_key <- if(fam_name=="(No family set)") "" else fam_name
+    # Helper: escape text for embedding in HTML attributes / JS strings
+    esc_html <- function(x) {
+      x <- gsub("&",  "&amp;",  x)
+      x <- gsub("<",  "&lt;",   x)
+      x <- gsub(">",  "&gt;",   x)
+      x <- gsub('"',  "&quot;", x)
+      x
+    }
+    esc_js <- function(x) gsub("'", "\\'", x, fixed=TRUE)
+
+    # Build the JS array of all photos as a single assignment we inject once
+    js_all <- paste0("var LB_PHOTOS=[",
+      paste(sapply(seq_len(nrow(all_ordered)), function(i) {
+        ph    <- all_ordered[i,]
+        cap   <- if(!is.na(ph$caption)&&ph$caption!="") ph$caption else ""
+        pname <- ""  # filled below after we join to plants
+        sprintf("'photos/%s'", ph$file_name)   # just the src; caption shown separately
+      }), collapse=","),
+    "];")
+
+    # Better: build full objects
+    plant_name_map <- setNames(
+      paste0(trimws(paste(plants$genus, ifelse(is.na(plants$species),"",plants$species)))),
+      as.character(plants$id))
+
+    js_objects <- paste(sapply(seq_len(nrow(all_ordered)), function(i) {
+      ph   <- all_ordered[i,]
+      cap  <- if(!is.na(ph$caption)&&ph$caption!="") esc_js(ph$caption) else ""
+      pnm  <- esc_js(plant_name_map[as.character(ph$plant_id)] %||% "")
+      sprintf("{src:'photos/%s',name:'%s',cap:'%s',date:'%s'}",
+        ph$file_name, pnm, cap, ph$photo_date)
+    }), collapse=",")
+
+    # Map file_name -> index in all_ordered (0-based for JS)
+    photo_idx <- setNames(seq_len(nrow(all_ordered))-1L, all_ordered$file_name)
+
+    # ── Generate HTML ─────────────────────────────────────────────────────────
+    families_present <- sort(unique(ifelse(is.na(plants$family)|plants$family=="",
+      "(No family set)", plants$family)))
+
+    sections_html <- paste(sapply(families_present, function(fam_name) {
+      fam_key   <- if(fam_name=="(No family set)") "" else fam_name
       fam_plants <- plants[
-        (is.na(plants$family)|plants$family=="") & fam_name=="(No family set)" |
-        (!is.na(plants$family) & plants$family==fam_key), ]
+        (!is.na(plants$family) & plants$family==fam_key) |
+        ((is.na(plants$family)|plants$family=="") & fam_name=="(No family set)"), ]
 
-      genera_in_fam <- sort(unique(fam_plants$genus))
-
-      genus_blocks <- lapply(genera_in_fam, function(g) {
+      genera_blocks <- paste(sapply(sort(unique(fam_plants$genus)), function(g) {
         g_plants <- fam_plants[fam_plants$genus==g, ]
 
-        species_blocks <- lapply(seq_len(nrow(g_plants)), function(j) {
-          plant <- g_plants[j,]
-          pid   <- plant$id
+        sp_blocks <- paste(sapply(seq_len(nrow(g_plants)), function(j) {
+          plant  <- g_plants[j,]
+          pid    <- plant$id
           p_photos <- all_photos[all_photos$plant_id==pid, ]
 
-          if (nrow(p_photos)==0 && !show_unphoto) return(NULL)
-
-          # Build display name
           sp_name <- trimws(paste(
             if(!is.na(plant$species)&&plant$species!="") plant$species else "",
             if(!is.na(plant$cultivar)&&plant$cultivar!="")
               paste0("'",plant$cultivar,"'") else ""))
-          if (nchar(trimws(sp_name))==0) sp_name <- paste("plant ID", pid)
+          if(nchar(trimws(sp_name))==0) sp_name <- paste("plant ID", pid)
 
-          if (nrow(p_photos)==0) {
-            # Placeholder for plants with no photos
-            return(tags$div(class="gallery-species",
-              tags$em(sp_name), " ",
-              tags$span(style="color:#bbb;font-size:11px;","(no photos)")))
+          if(nrow(p_photos)==0 && !show_unphoto)
+            return("")
+
+          goto_js <- sprintf(
+            "Shiny.setInputValue('gal_goto_plant',%d,{priority:'event'})", pid)
+
+          if(nrow(p_photos)==0) {
+            return(sprintf(
+              '<div class="gallery-species"><em>%s</em>
+               <span style="color:#bbb;font-size:11px;">(no photos)</span>
+               <a href="#" onclick="%s;return false;"
+                  style="font-size:11px;margin-left:8px;color:#2e7d32;">
+                  \u2192 plant record</a></div>',
+              esc_html(sp_name), esc_html(goto_js)))
           }
 
-          # Build JS photo array for this species (for lightbox)
-          js_photos <- paste0("[",
-            paste(sapply(seq_len(nrow(p_photos)), function(k) {
-              ph <- p_photos[k,]
-              cap <- if(!is.na(ph$caption)&&ph$caption!="") ph$caption else ""
-              sprintf('{src:"photos/%s",name:"%s %s",caption:"%s",date:"%s"}',
-                ph$file_name,
-                gsub('"',"'", g),
-                gsub('"',"'", sp_name),
-                gsub('"',"'", cap),
-                ph$photo_date)
-            }), collapse=","),
-          "]")
-
-          thumbs <- lapply(seq_len(nrow(p_photos)), function(k) {
-            ph  <- p_photos[k,]
-            cap <- if(!is.na(ph$caption)&&ph$caption!="") ph$caption else ""
-            tags$div(class="gallery-card",
-              tags$img(
-                src=paste0("photos/",ph$file_name),
-                class="gallery-thumb",
-                title=if(nchar(cap)>0) cap else paste(g, sp_name, ph$photo_date),
-                onclick=sprintf("lbOpen(%s,%d)", js_photos, k-1)
-              ),
+          thumb_html <- paste(sapply(seq_len(nrow(p_photos)), function(k) {
+            ph    <- p_photos[k,]
+            cap   <- if(!is.na(ph$caption)&&ph$caption!="") ph$caption else ""
+            ttl   <- esc_html(if(nchar(cap)>0) cap else
+                       paste(g, sp_name, ph$photo_date))
+            lb_idx <- photo_idx[ph$file_name]
+            sprintf(
+              '<div class="gallery-card">
+                <img src="photos/%s" class="gallery-thumb" title="%s"
+                     onclick="lbOpen(%d)">
+                %s
+                <div class="gallery-date">%s</div>
+               </div>',
+              ph$file_name, ttl, lb_idx,
               if(nchar(cap)>0)
-                tags$div(class="gallery-caption", cap)
-              else NULL,
-              tags$div(class="gallery-date", ph$photo_date)
-            )
-          })
+                sprintf('<div class="gallery-caption">%s</div>', esc_html(cap))
+              else "",
+              ph$photo_date)
+          }), collapse="\n")
 
-          tags$div(class="gallery-section",
-            tags$div(class="gallery-species",
-              tags$em(sp_name),
-              tags$span(style="color:#aaa;font-size:11px;margin-left:6px;",
-                paste0("(", nrow(p_photos), " photo", if(nrow(p_photos)!=1)"s" else "", ")")),
-              tags$a(style="font-size:11px;margin-left:8px;color:#2e7d32;",
-                href="#", onclick=sprintf(
-                  "Shiny.setInputValue('gal_goto_plant',%d,{priority:'event'});return false;", pid),
-                "→ plant record")
-            ),
-            tags$div(style="display:flex;flex-wrap:wrap;", thumbs)
-          )
-        })
+          sprintf(
+            '<div class="gallery-section">
+              <div class="gallery-species">
+                <em>%s</em>
+                <span style="color:#aaa;font-size:11px;margin-left:6px;">
+                  (%d photo%s)</span>
+                <a href="#" onclick="%s;return false;"
+                   style="font-size:11px;margin-left:8px;color:#2e7d32;">
+                   \u2192 plant record</a>
+              </div>
+              <div style="display:flex;flex-wrap:wrap;">%s</div>
+            </div>',
+            esc_html(sp_name),
+            nrow(p_photos), if(nrow(p_photos)!=1)"s" else "",
+            esc_html(goto_js),
+            thumb_html)
+        }), collapse="\n")
 
-        species_blocks <- Filter(Negate(is.null), species_blocks)
-        if (length(species_blocks)==0) return(NULL)
+        if(nchar(trimws(gsub("<[^>]*>","",sp_blocks)))==0) return("")
+        sprintf('<div>
+          <div class="gallery-genus"><span style="font-style:italic;">%s</span></div>
+          %s</div>',
+          esc_html(g), sp_blocks)
+      }), collapse="\n")
 
-        tags$div(
-          tags$div(class="gallery-genus",
-            tags$span(style="font-style:italic;", g),
-            tags$span(style="font-weight:400;font-size:13px;color:#888;margin-left:8px;",
-              paste0("(",length(species_blocks)," species)"))
-          ),
-          species_blocks
-        )
-      })
+      if(nchar(trimws(gsub("<[^>]*>","",genera_blocks)))==0) return("")
+      sprintf('<div style="margin-bottom:24px;">
+        <h4 style="background:#e8f5e9;padding:8px 12px;border-radius:6px;
+                   border-left:4px solid #2e7d32;margin-bottom:10px;">%s</h4>
+        %s</div>',
+        esc_html(fam_name), genera_blocks)
+    }), collapse="\n")
 
-      genus_blocks <- Filter(Negate(is.null), genus_blocks)
-      if (length(genus_blocks)==0) return(NULL)
-
-      tags$div(style="margin-bottom:24px;",
-        tags$h4(style="background:#e8f5e9;padding:8px 12px;border-radius:6px;
-                        border-left:4px solid #2e7d32;margin-bottom:10px;",
-          fam_name),
-        genus_blocks
-      )
-    })
-
-    sections <- Filter(Negate(is.null), sections)
-    if (length(sections)==0)
-      return(tags$p("No photos to display. Upload photos via Record Data → Photos.",
+    if(nchar(trimws(gsub("<[^>]*>","",sections_html)))==0)
+      return(tags$p("No photos to display. Upload photos via Record Data \u2192 Photos.",
         style="color:#888;font-style:italic;padding:20px;"))
 
-    n_photos_total <- nrow(all_photos)
-    n_plants_shown <- sum(sapply(plants$id, function(pid) any(all_photos$plant_id==pid)))
+    n_photos <- nrow(all_photos)
+    n_plants <- length(unique(all_photos$plant_id))
 
-    tagList(
-      tags$p(style="color:#555;font-size:13px;margin-bottom:12px;",
-        sprintf("%d photo%s across %d plant%s",
-          n_photos_total, if(n_photos_total!=1)"s" else "",
-          n_plants_shown, if(n_plants_shown!=1)"s" else "")),
-      sections
-    )
+    # Inject lightbox overlay + JS photo array + gallery HTML as one raw block
+    HTML(paste0(
+      # Lightbox overlay
+      '<div id="lb-overlay" onclick="if(event.target===this)lbClose()"
+            style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;
+                   background:rgba(0,0,0,0.88);z-index:9999;
+                   justify-content:center;align-items:center;flex-direction:column;">
+        <span onclick="lbClose()"
+              style="position:fixed;top:18px;right:28px;color:#fff;font-size:36px;
+                     cursor:pointer;line-height:1;z-index:10000;">&times;</span>
+        <span onclick="lbStep(-1)"
+              style="position:fixed;top:50%;left:12px;transform:translateY(-50%);
+                     color:#fff;font-size:48px;cursor:pointer;background:rgba(0,0,0,0.3);
+                     padding:4px 14px;border-radius:6px;user-select:none;z-index:10000;">&#8249;</span>
+        <img id="lb-img" src="" style="max-width:90vw;max-height:80vh;
+             border-radius:8px;box-shadow:0 4px 32px #000;">
+        <div id="lb-cap" style="color:#eee;font-size:14px;margin-top:12px;
+             text-align:center;max-width:80vw;"></div>
+        <span onclick="lbStep(1)"
+              style="position:fixed;top:50%;right:12px;transform:translateY(-50%);
+                     color:#fff;font-size:48px;cursor:pointer;background:rgba(0,0,0,0.3);
+                     padding:4px 14px;border-radius:6px;user-select:none;z-index:10000;">&#8250;</span>
+      </div>',
+
+      # JS: photo array + functions — all inline, no external escaping
+      '<script>',
+      'var LB=[', js_objects, '];',
+      'var LB_I=0;',
+      'function lbOpen(i){',
+      '  LB_I=i;',
+      '  document.getElementById("lb-img").src=LB[i].src;',
+      '  document.getElementById("lb-cap").innerHTML=',
+      '    "<strong>"+LB[i].name+"</strong>"+',
+      '    (LB[i].cap?"&nbsp;&mdash;&nbsp;"+LB[i].cap:"")+',
+      '    "<br><small style=\'color:#aaa\'>"+LB[i].date+"</small>";',
+      '  document.getElementById("lb-overlay").style.display="flex";',
+      '}',
+      'function lbClose(){document.getElementById("lb-overlay").style.display="none";}',
+      'function lbStep(d){lbOpen((LB_I+d+LB.length)%LB.length);}',
+      'document.onkeydown=function(e){',
+      '  if(document.getElementById("lb-overlay").style.display!="flex")return;',
+      '  if(e.key==="ArrowRight")lbStep(1);',
+      '  if(e.key==="ArrowLeft")lbStep(-1);',
+      '  if(e.key==="Escape")lbClose();',
+      '};',
+      '</script>',
+
+      # Summary line
+      sprintf('<p style="color:#555;font-size:13px;margin-bottom:12px;">%d photo%s across %d plant%s</p>',
+        n_photos, if(n_photos!=1)"s" else "",
+        n_plants, if(n_plants!=1)"s" else ""),
+
+      # Gallery sections
+      sections_html
+    ))
   })
 
   # "Jump to plant record" from gallery
