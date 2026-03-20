@@ -9,34 +9,37 @@ Welcome! This guide covers everything the app can do, written for collectors rat
 
 | I want to… | Where to go |
 |---|---|
-| 🔍 Find a plant in my collection | **Collection** tab → search box |
+| 🔍 Find a plant in my collection | **Collection** → search box |
 | ➕ Add a new plant | **Add Plant** tab |
 | 📏 Record a measurement | **Record Data** → Measurements |
 | 🌸 Log a flowering event | **Record Data** → Flowering |
-| 🪨 Record a soil mix | **Record Data** → Soil Mix |
+| 🪨 Record or edit a soil mix | **Record Data** → Soil Mix |
+| 📷 Upload photos of a plant | **Record Data** → Photos |
+| 🖼️ Browse all photos by taxonomy | **Gallery** tab |
 | 📅 Log a repot, treatment, or other event | **Events & Notes** tab |
 | 📈 See how a plant has grown over time | **Growth Charts** tab |
 | 🌱 Manage a seed batch | **Seeds & Germination** tab |
 | 🏷️ Print plant labels | **Tools** → Labels |
 | 📤 Export my collection to Excel | **Tools** → Export |
 | 📥 Import an existing plant list | **Tools** → Import |
-| ✏️ Correct a mistake in a record | **Collection** → click plant → Edit plant |
+| ✏️ Correct a mistake | Click the plant → **Edit plant**, or select a row → **Edit selected row** |
 
 ---
 
 ## 🗂️ The layout
 
-The app has a **green sidebar** on the left with seven sections. Click any item to switch to that section.
+The app has a **green sidebar** on the left with eight sections. Click any item to switch to that section.
 
 | Section | Purpose |
 |---|---|
 | 🪴 **Collection** | Browse and search all plants; view details; edit, archive, or delete |
 | ➕ **Add Plant** | Register a new plant in your collection |
-| 📝 **Record Data** | Log measurements, flowering events, and soil mix changes |
+| 📝 **Record Data** | Log measurements, flowering events, soil mixes, and photos |
 | 📅 **Events & Notes** | Record cultivation events (repotting, treatments, dormancy, etc.) |
 | 📈 **Growth Charts** | Visualise growth over time for any plant |
 | 🌱 **Seeds & Germination** | Manage seed batches, survival counts, and graduate seedlings |
 | 🔧 **Tools** | Print labels, export to Excel, import from a spreadsheet |
+| 🖼️ **Gallery** | Browse all photos organised by family, genus, and species |
 
 ---
 
@@ -50,7 +53,8 @@ The Collection tab shows a searchable table of all your plants — active ones b
 - 🔍 Type in the **Search** box to filter by genus, species, family, or common name
   - e.g. type `Lithops` to see only living stones
   - e.g. type `Namibia` to find plants from that region
-- 🔼🔽 Click any **column header** to sort by that column; click again to reverse
+- 🔼🔽 Click any **column header** to sort; click again to reverse
+- 🖼️ The leftmost column shows a small thumbnail of the most recent photo for each plant (if any)
 
 ### 🔎 Viewing a plant's full details
 
@@ -67,7 +71,7 @@ Click any row in the table. A **detail panel expands below** showing everything 
 
 ### 📦 Archiving plants
 
-Archiving is the **safe option** for plants you no longer have. The plant disappears from the active list, but every associated record — measurements, events, flowering history, photos — is kept. You can restore an archived plant at any time using DB Browser for SQLite.
+Archiving is the **safe option** for plants you no longer have. The plant disappears from the active list but every associated record — measurements, events, flowering history, photos — is kept. You can restore an archived plant at any time using DB Browser for SQLite.
 
 1. Select one or more rows
 2. Click **Archive selected** (🟠 orange button)
@@ -82,7 +86,7 @@ Use this to remove bad imports or test entries where you don't need the records 
 3. Read the warning carefully — **this cannot be undone**
 4. Click **Delete permanently**
 
-> 💡 **Clearing a bad import?** Use Shift+click to select all the unwanted rows at once, then Delete selected. Much faster than one at a time.
+> 💡 **Clearing a bad import?** Use Shift+click to select all the unwanted rows at once, then Delete selected.
 
 ### ✏️ Editing a plant record
 
@@ -91,9 +95,7 @@ Use this to remove bad imports or test entries where you don't need the records 
 3. A form opens with all current values pre-filled — change whatever needs updating
 4. Click **Save changes**
 
-> ✅ The table returns to your previous page position, not back to page 1.
-
-> 💡 **Auto-filling family names by genus:** if you update a plant's family and there are other plants of the same genus with a missing or different family, the app will ask: *"There are 7 other Lithops records — would you like to set them all to Aizoaceae?"* Click **Yes, update all** to fill them in one go.
+> ✅ The table returns to your previous page position after saving, not back to page 1.
 
 ### 📋 Duplicating a plant
 
@@ -102,7 +104,7 @@ Useful when you have several plants of the same species with mostly identical de
 1. Click the plant's row to open the detail panel
 2. Click **Duplicate** (grey button)
 3. The app switches to Add Plant with all fields pre-filled
-4. Change whatever differs — cultivar, acquisition date, supplier — then click **Add Plant**
+4. Change whatever differs — cultivar, acquisition date — and click **Add Plant**
 
 ---
 
@@ -116,13 +118,15 @@ Use this to register a new plant in your collection.
 
 | Field | Example |
 |---|---|
-| Family | `Aizoaceae` |
-| Genus *(required)* | `Lithops`, `Echinopsis`, `Haworthia` |
-| Species | `fulviceps`, `pachanoi` |
-| Cultivar / form | `'Cole's Yellow'`, `v. aurantiaca`, `ssp. Bilobum` |
-| Common name | `Living stone`, `San Pedro`, `Peyote` |
+| Family | `Aizoaceae` · `Cactaceae` · `Asphodelaceae` |
+| Genus *(required)* | `Lithops` · `Echinopsis` · `Haworthia` |
+| Species | `fulviceps` · `pachanoi` |
+| Cultivar / form | `'Cole's Yellow'` · `v. aurantiaca` · `ssp. Bilobum` |
+| Common name | `Living stone` · `San Pedro` |
 
-> 💡 Family and origin fields remember previous entries and suggest them as you type.
+> 💡 **Family auto-fill:** if you type a genus you've used before (e.g. `Lithops`), the family field fills in automatically with the known family (`Aizoaceae`). If the genus is new to your collection, the field stays blank and you fill it manually. When you save, the app also offers to update all other plants of the same genus to the same family — useful when you've just added family information for the first time.
+
+> 💡 Family, origin, substrate, flower colour, and seed origin fields remember previous entries and suggest them as you type. You can always type something new that isn't in the list.
 
 **🛒 Acquisition**
 
@@ -151,18 +155,18 @@ Use this to register a new plant in your collection.
 ### ✏️ Example entry
 
 > 🌿 **Conophytum bilobum** ssp. Bilobum  
-> Family: `Aizoaceae`  
+> Family: `Aizoaceae` *(auto-filled when you type Conophytum)*  
 > Source: `purchase` from `Kliphuis Nursery, Barrydale`  
 > Acquired: `2025-03-15`  
 > Origin: `Klihoogte, Western Cape, South Africa`  
 > Substrate: `quartzite rubble`  
-> Dormancy: ☀️ Summer dormant  
+> Dormancy: ☀️ Summer dormant
 
 ---
 
 ## 📝 Record Data
 
-This tab has three sub-tabs: **Measurements**, **Flowering**, and **Soil Mix**.
+This tab has four sub-tabs: **Measurements**, **Flowering**, **Soil Mix**, and **Photos**.
 
 ### 📏 Measurements
 
@@ -177,7 +181,7 @@ Record the size of a plant at a point in time. Do this periodically — monthly,
 | Offsets / heads / pads | Pups, heads on a multi-headed cactus, or pads on an Opuntia |
 | Notes | Condition notes, anything unusual |
 
-> 💡 **Example:** After six months you notice your *Astrophytum asterias* has grown noticeably. You record Height 38mm, Width 52mm. Six months later: Height 41mm, Width 61mm. The Growth Charts tab now shows you a curve — and the growth rate in mm per month.
+> 💡 **Example:** After six months you notice your *Astrophytum asterias* has grown noticeably. You record Height 38mm, Width 52mm. Six months later: Height 41mm, Width 61mm. The Growth Charts tab now shows you a curve and the growth rate in mm per month.
 
 **✏️ Editing a measurement:** select the row in the Recent measurements table, then click **Edit selected row**.
 
@@ -196,7 +200,7 @@ Record each flowering event — dates, colour, pollination, seed set, and photos
 | Seed notes | Harvest date, quantity, storage location |
 | Photo | Attach a photo of the flower (jpg, png, or webp) |
 
-> 💡 **Example:** Your *Huernia pillansii* flowered in October. You record: started 12/10/2025, ended 19/10/2025, colour `pale yellow with dark red spots and central annulus`, pollination `hand-pollinated with own pollen`, seeds set ✅, seed notes `harvested 5/11/2025, ~30 seeds, paper envelope in fridge`.
+> 💡 **Example:** Your *Huernia pillansii* flowered in October. You record: started 12/10/2025, ended 19/10/2025, colour `pale yellow with dark red spots and central annulus`, seeds set ✅, seed notes `~30 seeds, paper envelope in fridge`.
 
 ---
 
@@ -204,14 +208,17 @@ Record each flowering event — dates, colour, pollination, seed set, and photos
 
 Record what soil mix a plant is potted in, and when. This lets you compare what a plant was in before and after a repot, and correlate mix changes with growth.
 
-**How to record a mix:**
+**Recording a new mix:**
 
-1. Select the plant
-2. Set the date (e.g. the day you repotted)
-3. Enter each component and its percentage — the running total updates as you type
-4. Click **+ Add row** if you need more than three components
-5. Add any notes (pH, where you sourced components)
-6. Click **Save Soil Mix**
+1. Select the plant and set the date (e.g. the day you repotted)
+2. Enter each component and its percentage — the running total updates as you type
+3. Click **+ Add row** if you need more than three components
+4. Add any notes (pH, where you sourced components)
+5. Click **Save Soil Mix**
+
+**✏️ Editing a saved mix:** select the row in the Soil mix history table, then click **Edit selected mix**. A modal opens pre-filled with the date, notes, and all components. You can change percentages, rename components, or add rows. Click **Save changes** when done.
+
+**🗑️ Deleting a mix:** select the row and click **Delete selected mix**. This removes both the mix record and all its component records.
 
 > 💡 **Example mix for a Lithops:**
 >
@@ -223,6 +230,26 @@ Record what soil mix a plant is potted in, and when. This lets you compare what 
 > | Decomposed granite | 10% |
 >
 > Notes: `pH 6.5, pumice from Daltons, repotted from 5cm to 8cm terracotta`
+
+---
+
+### 📷 Photos
+
+Upload one or more photos for any plant. Photos uploaded here appear in the collection table (as a thumbnail), in the plant detail panel, and in the Gallery tab.
+
+**Uploading photos:**
+
+1. Select the plant from the dropdown
+2. Set the date the photo was taken
+3. Click **Browse** and select one or more image files (jpg, png, or webp)
+4. Optionally add a caption — this applies to all photos in the current upload
+5. Click **Upload Photos**
+
+> 💡 **Multiple photos at once:** hold Ctrl (Windows) or Cmd (Mac) when selecting files to pick several at once in the browser dialog.
+
+> 💡 **iPhone photos:** iPhones save photos as HEIC format by default, which is not currently supported. To fix this, go to **Settings → Camera → Formats → Most Compatible** on your iPhone — this saves new photos as JPEG instead.
+
+**The photo library** on the right shows all photos as square thumbnails. Filter by plant using the dropdown. Click a thumbnail to select it (highlighted in green), then click **Delete selected photo** to permanently remove both the image file and its record.
 
 ---
 
@@ -244,7 +271,7 @@ Use this for cultivation events that aren't measurements or soil changes.
 | 🌱 dormancy end | Resumed watering, moved back to growing position |
 | 📝 other | Anything else |
 
-> 💡 **These events appear as dashed blue lines on growth charts** — so you can see whether a fertiliser application preceded a growth spurt, or whether a treatment coincided with a decline.
+> 💡 These events appear as **dashed blue lines on growth charts** — so you can see whether a fertiliser application preceded a growth spurt, or whether a treatment coincided with a decline.
 
 **✏️ Editing an event:** select its row in the history table, then click **Edit selected row**.
 
@@ -258,15 +285,15 @@ Select a plant and a metric to see a growth curve over time.
 - 🔵 **Dashed blue lines** mark cultivation events — toggle with the checkbox
 - The **Growth summary** panel shows total change and average growth rate per month
 
-> 💡 **Tip for slow growers:** for Lithops, Conophytum, or ariocarpus species, measurements in millimetres over several years reveal patterns that are invisible week to week — which season they grow fastest, whether a new soil mix is performing better, how a repot affected the growth curve.
+> 💡 For slow-growing plants like Lithops or ariocarpus, measurements over several years reveal patterns invisible week to week — which season they grow fastest, whether a new soil mix is performing better, how a repot affected the curve.
 
-The table at the bottom shows the **latest measurement for every active plant** at a glance — useful for a periodic collection health check.
+The table at the bottom shows the **latest measurement for every active plant** — useful for a periodic collection health check.
 
 ---
 
 ## 🌱 Seeds & Germination
 
-This section manages **seed batches** separately from individual plants. A sowing is a whole tray of seeds; individual plants emerge from it later.
+This section manages **seed batches** separately from individual plants. A sowing is a whole tray; individual plants emerge from it later.
 
 ### 🌱 New Sowing
 
@@ -277,32 +304,27 @@ Register a new seed batch when you sow.
 | Genus / Species | The species you are sowing |
 | Sow date | When you put the seeds in |
 | No. seeds sown | Total started — used to calculate survival % |
-| Seed origin | `Mesa Garden catalogue` · `own harvest Oct 2024` · `seed swap with J. Smith` |
+| Seed origin | `Mesa Garden catalogue` · `own harvest Oct 2024` · `seed swap` |
 | Seed age | `fresh` · `2023 harvest` · `~3 years old` |
 | Humidity enclosure | `50L plastic tub with lid` · `clear bag over tray` |
-| Enclosure first opened | When you first cracked the lid for air |
+| Enclosure first opened | When you first cracked the lid for air circulation |
 | Enclosure fully removed | When seedlings were fully exposed |
 | Heat mat | ☑️ Tick if used; add temperature and timing details |
-| Lighting | `16hr T5 fluorescent at 15cm for first 3 months, then south windowsill` |
+| Lighting | `16hr T5 fluorescent at 15cm for first 3 months` |
 | Watering | `bottom-watered when surface just dry, approx weekly` |
-
-> 💡 **Example:** You sow 50 *Conophytum bilobum* seeds on 1 March 2025. Seed origin: `Silverhill Seeds`, seed age: `2024 harvest`, humidity enclosure: `plastic tray in zip-lock bag`, heat mat: `~22°C 24hr for first 4 weeks`.
+| Date first germinated | Defaults to the sow date — adjust forward when germination occurs |
 
 ---
 
 ### 📋 Sowing Records
 
-Browse all your sowings. **Click a row** to expand a full detail panel.
-
-Use **Edit selected sowing** to update any field — for example, filling in the first germination date once seeds begin to sprout.
+Browse all your sowings. **Click a row** to expand a full detail panel. Use **Edit selected sowing** to update any field. Use **Delete selected sowing** to remove the record (seedling counts and graduated plants are kept).
 
 ---
 
 ### ✏️ Log Count / Event
 
-The ongoing data-entry tab for an active sowing.
-
-**📊 Seedling counts** — record how many seedlings are alive at any point in time. Do this weekly at first, then monthly. These build the survival chart.
+**📊 Seedling counts** — record how many seedlings are alive at any point in time.
 
 > 💡 **Example count log for 50 seeds sown:**
 >
@@ -319,32 +341,28 @@ The ongoing data-entry tab for an active sowing.
 |---|---|
 | 🧪 fungicide treatment | `Chinosol 0.1% drench, preventative week 3` |
 | 🐛 pesticide treatment | `Confidor drench for fungus gnat larvae` |
-| 🍄 pathogen observed - fungus | `Damping off in corner of tray, 3 seedlings removed` |
+| 🍄 pathogen observed - fungus | `Damping off in corner, 3 seedlings removed` |
 | ✂️ thinned | `Removed 8 weakest seedlings to improve airflow` |
 
 ---
 
 ### 📈 Survival Chart
 
-Select a sowing to see a **purple area chart** of seedling counts over time.
-
-- Toggle **Show as % of seeds sown** to see mortality rate rather than raw numbers
-- ⚠️ **Sowing events appear as orange dashed lines** — so you can see what treatments coincided with what survival trends
-- The summary panel shows total days tracked, seeds sown, and final survival rate
+Select a sowing to see a **purple area chart** of seedling counts over time. Toggle **Show as % of seeds sown** for mortality rate. ⚠️ Sowing events appear as orange dashed lines.
 
 ---
 
 ### 🎓 Graduate to Plant
 
-When a seedling is large enough to deserve its own pot and its own record:
+When a seedling is large enough for its own pot:
 
 1. Select the sowing it came from
 2. Optionally add a cultivar name if it shows distinctive characteristics
 3. Set the date you potted it up individually
-4. Add notes — e.g. *"largest seedling from batch, 8mm diameter, own 5cm pot"*
+4. Add notes — pot size, initial condition, which seedling from the batch
 5. Click **Create Plant Record**
 
-The new plant record is permanently linked to its sowing. In the Collection detail panel, you'll see a 🟣 **Sowing provenance** badge — you can always trace the plant back to the original seed batch, seed source, and germination conditions.
+The new plant is permanently linked to its sowing. A 🟣 **Sowing provenance** badge appears in the Collection detail panel.
 
 ---
 
@@ -354,58 +372,93 @@ The new plant record is permanently linked to its sowing. In the Collection deta
 
 Generate a printable label sheet for your plants.
 
-**Settings:**
-
 | Setting | Notes |
 |---|---|
-| Width / Height (mm) | Match your label stock — e.g. 55×19mm for small cactus labels, 89×28mm for Dymo address labels |
+| Width / Height (mm) | Match your label stock — e.g. 55×19mm for small cactus labels |
 | Font size | 7pt fits a lot on a small label; increase for larger stock |
-| Show border | Helpful on screen; can be turned off for pre-cut labels |
+| Show border | Helpful for positioning; can be turned off for pre-cut labels |
 | Fields to include | ☑️ Tick whichever you want — name, origin, date, family, notes, etc. |
 | Which plants | All active plants, or just one selected plant |
 
-**To print:**
-1. Click **Download label sheet** — you'll get an HTML file
-2. Open it in Chrome or Edge
-3. Click the **Print labels** button at the top of the page
-4. In the print dialog, set the paper size to match your label dimensions and margins to minimum
+Click **Download label sheet** → open the HTML file in Chrome or Edge → click **Print labels** → set paper size to match your label dimensions and margins to minimum.
 
 ---
 
 ### 📤 Export to Excel
 
-Download all your data as a formatted Excel workbook.
-
 1. ☑️ Tick which tables to include
 2. Choose **Active plants only** or **All plants**
 3. Click **Download Excel workbook**
 
-Each table becomes its own sheet with auto-sized columns. The file is named with today's date, e.g. `cactus_collection_20250601.xlsx`.
+Each table becomes its own sheet with auto-sized columns, named with today's date e.g. `cactus_collection_20250601.xlsx`.
 
 ---
 
 ### 📥 Import from spreadsheet
 
-Bring in an existing plant list from a CSV or XLSX file.
-
-1. Click **Browse** and select your file
-2. The **File preview** panel shows the first 6 rows
-3. Use the **Map columns** dropdowns to match your column names to the database fields
+1. Click **Browse** and select your CSV or XLSX file
+2. The **File preview** shows the first 6 rows
+3. Use the **Map columns** dropdowns to match your column names to database fields
    - The app tries to auto-match by column name
-   - Only **Genus** is required; all others are optional
-4. Once you've mapped the Genus column, click **Import plants**
-5. A summary tells you how many rows were imported and how many were skipped
+   - Only **Genus** is required
+4. Click **Import plants**
 
 **🗓️ Date formats handled automatically:**
 
-| What's in your file | What it means | Stored as |
-|---|---|---|
-| `45778` | Excel serial number | `2025-05-01` |
-| `1/05/2025` | Australian d/m/yyyy | `2025-05-01` |
-| `September, 2025` | Named month | `2025-09-01` |
-| `2025-03-05` | ISO format | `2025-03-05` |
+| What's in your file | Stored as |
+|---|---|
+| `45778` (Excel serial) | `2025-05-01` |
+| `1/05/2025` (Australian) | `2025-05-01` |
+| `September, 2025` | `2025-09-01` |
+| `2025-03-05` (ISO) | `2025-03-05` |
 
-> ⚠️ **After importing:** go to the Collection tab and check a few records to confirm dates and origins look right. If anything is wrong, select all the imported rows and **Delete selected**, fix your spreadsheet, and re-import.
+> ⚠️ After importing, check a few records in Collection to confirm dates and origins look right. If anything is wrong, select all the imported rows and **Delete selected**, fix your spreadsheet, and re-import.
+
+---
+
+## 🖼️ Gallery
+
+The Gallery tab shows all your photos organised by taxonomy — a visual overview of your entire collection.
+
+### Browsing the gallery
+
+Photos are arranged in a three-level hierarchy:
+
+- **Family** — green header bar (e.g. Aizoaceae, Cactaceae)
+  - **Genus** — bold italic heading with species count
+    - **Species / cultivar** — italic line with photo count and a → plant record link
+      - Thumbnail grid of all photos for that plant
+
+Click any thumbnail to open it **full size** in a lightbox overlay. You can then step through all photos in the current filtered view — not just the species you clicked.
+
+### 🔍 Filtering
+
+Three controls at the top narrow what you see:
+
+| Control | How it works |
+|---|---|
+| **Family** dropdown | Shows only plants in that family |
+| **Genus** dropdown | Cascades automatically when a family is selected |
+| **Search** box | Filters by species name, cultivar, or caption |
+| **Show plants with no photos** | Reveals all plants that still need photographing |
+
+> 💡 The "show plants with no photos" option is handy as a to-do list — it shows you at a glance which species in your collection aren't documented yet.
+
+### 🔆 Lightbox
+
+Click any thumbnail to open it full size. The lightbox steps through **all photos in the current filtered view** — so if you have filtered to a genus, you can arrow through every photo of that genus in one go.
+
+| Action | How |
+|---|---|
+| Next photo | Click **›** or press **→** arrow key |
+| Previous photo | Click **‹** or press **←** arrow key |
+| Close | Click **×**, press **Escape**, or click the dark background |
+
+The plant name, caption, and date are shown beneath each image.
+
+### → Plant record link
+
+Next to each species name there is a small **→ plant record** link. Clicking it takes you to the Collection tab for that plant so you can view its full cultivation history.
 
 ---
 
@@ -417,29 +470,38 @@ Yes, but not simultaneously. Copy the entire `cactus_tracker` folder to the othe
 **What happens to my data when I update the app?**
 Nothing. Your data is in `collection.db`, which an update never touches. Just replace `app.R` and run as normal.
 
-**Can I have separate databases — e.g. for a different collection or a friend?**
-Yes. Copy the `cactus_tracker` folder to a new location, delete `collection.db` from the copy, and run the app from that new folder. Each folder has its own independent database.
+**Can I have separate databases — e.g. for a different collection?**
+Yes. Copy the `cactus_tracker` folder to a new location, delete `collection.db` from the copy, and run the app from that folder. Each folder has its own independent database.
 
 **The date I entered looks wrong — how do I fix it?**
-Go to Collection → click the plant → **Edit plant** → correct the date. Dates should be entered as `YYYY-MM-DD` in edit forms (e.g. `2025-05-01`).
+Go to Collection → click the plant → **Edit plant** → correct the date. Dates should be entered as `YYYY-MM-DD` (e.g. `2025-05-01`) in edit forms.
 
 **I accidentally deleted a plant — can I get it back?**
-Only if you have a backup of `collection.db`. This is why regular backups matter. When in doubt, **Archive** rather than Delete — archived plants are always recoverable.
+Only if you have a backup of `collection.db`. When in doubt, **Archive** rather than Delete — archived plants are always recoverable.
+
+**My iPhone photos won't upload.**
+iPhones save in HEIC format by default. Go to **Settings → Camera → Formats → Most Compatible** to switch to JPEG for new photos going forward.
 
 **Can I attach more than one photo to a plant?**
-Yes. Each flowering event can have a photo, and all photos for a plant appear as thumbnails in the detail panel. A standalone photo upload feature (outside of flowering events) is planned.
+Yes — upload multiple photos at once via Record Data → Photos. All photos for a plant appear as thumbnails in the detail panel and in the Gallery tab.
+
+**Photos appear in the Gallery but I can't see thumbnails in the Collection table.**
+The collection table shows only the most recent photo per plant. If a photo was uploaded but isn't showing, try refreshing the page (F5).
 
 ---
 
-## ⌨️ Keyboard shortcuts in the collection table
+## ⌨️ Keyboard shortcuts
 
 | Action | Shortcut |
 |---|---|
-| Select a row | Click |
-| Select a range | Shift+click the last row in the range |
+| Select a row in a table | Click |
+| Select a range | Shift+click the last row |
 | Add/remove a row from selection | Ctrl+click (Windows) / Cmd+click (Mac) |
 | Sort by a column | Click the column header |
 | Reverse the sort | Click the same header again |
+| Next photo in lightbox | → arrow key |
+| Previous photo in lightbox | ← arrow key |
+| Close lightbox | Escape |
 
 ---
 

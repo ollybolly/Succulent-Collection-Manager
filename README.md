@@ -1,8 +1,8 @@
 # 🌵 Cactus & Succulent Collection Tracker
 
-> *A free, private, offline desktop app for succulent and cactus collectors wanting to manage growing and learn what works.*
+> *A free, private, offline desktop app for serious succulent and cactus collectors.*
 
-Track your plants, their growth, cultivation history, seed raising, labels, and more — all stored on your own computer.
+Track your plants, their growth, cultivation history, seed raising, labels, and more — all stored on your own computer. No subscription. No cloud account. No ads.
 
 Built with **R Shiny** and **SQLite**.
 
@@ -10,12 +10,12 @@ Built with **R Shiny** and **SQLite**.
 
 ## 🌿 Who this is for
 
-This app was built for collectors who have outgrown a spreadsheet but want a system designed with succulents in mind. It understands things like:
+This app was built for collectors who have outgrown a spreadsheet but don't want a generic garden app that wasn't designed with succulents in mind. It understands things like:
 
 - ☀️ Summer vs ❄️ winter dormancy
 - The difference between a measurement and a cultivation event
 - Tracking a seed batch from sowing through to individual graduated plants
-- Llifle links, substrate notes, and subspecies names
+- Llifle links, native substrate notes, and subspecies names
 
 Whether you have a windowsill of Lithops, a greenhouse of cacti, or an active seed-raising operation — this app is designed for you.
 
@@ -33,10 +33,10 @@ Whether you have a windowsill of Lithops, a greenhouse of cacti, or an active se
 - Soft archive (keeps all records) or permanent delete
 - Bulk select — archive or delete multiple plants at once
 - Duplicate a plant record to speed up entering similar specimens
-- Auto-fill family by genus — update one *Lithops* with family Aizoaceae and the app offers to update all your other *Lithops* at once
+- **Auto-fill family by genus** — update one *Lithops* with family Aizoaceae and the app offers to update all your other *Lithops* at once
 
 ### 📏 Growth tracking
-- Record height, width, and offset/head counts at any date
+- Record height, width, and offset/head/pad counts at any date
 - Line charts of growth over time with cultivation events overlaid as markers
 - Growth rate summary (units per month)
 - Latest measurements for all active plants in one table
@@ -44,7 +44,8 @@ Whether you have a windowsill of Lithops, a greenhouse of cacti, or an active se
 ### 🌱 Cultivation records
 - **📅 Events & notes:** repotting, watering, fertilising, treatments, dormancy start/end
 - **🌸 Flowering records:** dates, colour, pollination method, seed set, seed harvest notes, and attached photos
-- **🪨 Soil mixes:** component-by-component records with percentages, dated so you can track what youve used and how it worked
+- **🪨 Soil mixes:** component-by-component records with percentages, dated — fully editable after saving
+- **📷 Photos:** upload one or more photos for any plant; thumbnails shown in the collection table and plant detail panel
 
 ### 🌱 Seeds & germination
 - Sowing records: seed origin, seed age, sow date, number of seeds, enclosure, heat mat, lighting, watering
@@ -52,6 +53,13 @@ Whether you have a windowsill of Lithops, a greenhouse of cacti, or an active se
 - 📈 Survival chart showing count or percentage over time, with treatment events overlaid
 - Log fungicide treatments, pathogen observations (damping off, rot, fungus), thinning events
 - Graduate individual seedlings into the main plant collection, with a permanent link back to their sowing provenance
+
+### 🖼️ Gallery
+- Browse all photos organised by Family → Genus → Species
+- Filter by family, genus, or free-text search
+- Click any thumbnail to open it full size with a lightbox overlay
+- Step through the entire filtered gallery with arrow keys or on-screen buttons
+- "Show plants with no photos" mode highlights which species still need photographing
 
 ### 🏷️ Labels
 - Generate a printable label sheet as an HTML file — open in any browser and print
@@ -120,11 +128,9 @@ Everything lives in your `cactus_tracker` folder:
 
 ---
 
-## 🗺️ Roadmap / known limitations
+## 🗺️ Known limitations
 
-- 📷 Photo upload is currently attached to flowering events only — a standalone photo tab is planned
-- 🪨 Soil mix records cannot be edited after saving (use [DB Browser for SQLite](https://sqlitebrowser.org) in the meantime)
-- 👤 The app is designed for single-user local use; networked multi-user use is not supported
+- 👤 The app is designed for single-user local use on a personal computer; networked or multi-user use is not supported
 
 ---
 
@@ -140,11 +146,9 @@ Contributions are welcome!
 
 ## 🙏 Acknowledgements
 
-Built for succulent and cactus collecting enthusiasts and freaks. Inspired by the overwhelming weirdness and wonderfulness of these plants, which can quickly get out of hand.
+Built for the succulent and cactus collecting community. Inspired by the joy of a serious collection, and by the inadequacy of generic plant apps for managing one.
 
 Species reference links connect to the [Llifle Encyclopaedia of Living Forms](https://www.llifle.com/Encyclopedia/SUCCULENTS/).
-
-Claude AI did all the hard coding work! Olly just sketched out a plan and iterated to create something functional. 
 
 ---
 
