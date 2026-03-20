@@ -236,7 +236,8 @@ ui <- dashboardPage(
     menuItem("Events & Notes",    tabName="events",      icon=icon("calendar-days")),
     menuItem("Growth Charts",     tabName="charts",      icon=icon("chart-line")),
     menuItem("Seeds & Germination",tabName="seeds",      icon=icon("circle-dot")),
-    menuItem("Tools",             tabName="tools",       icon=icon("wrench"))
+    menuItem("Tools",             tabName="tools",       icon=icon("wrench")),
+    menuItem("Gallery",           tabName="gallery",     icon=icon("images"))
   )),
   dashboardBody(
     useShinyjs(),
@@ -252,6 +253,33 @@ ui <- dashboardPage(
       .seed-badge{display:inline-block;padding:2px 9px;border-radius:10px;font-size:12px;font-weight:600;background:#f3e5f5;color:#6a1b9a;}
       .label-preview{border:1px solid #ccc;border-radius:6px;background:#fafafa;padding:10px;min-height:80px;}
       .import-preview{font-size:12px;}
+      .gallery-thumb{width:110px;height:110px;object-fit:cover;border-radius:6px;
+                     border:2px solid #e0e0e0;cursor:pointer;transition:transform .15s,border-color .15s;}
+      .gallery-thumb:hover{transform:scale(1.06);border-color:#2e7d32;}
+      .gallery-card{display:inline-block;text-align:center;width:120px;vertical-align:top;
+                    margin:5px;padding:4px;border-radius:8px;}
+      .gallery-section{margin-bottom:18px;}
+      .gallery-genus{font-size:15px;font-weight:700;color:#2e7d32;margin:14px 0 4px 0;
+                     border-bottom:2px solid #c8e6c9;padding-bottom:3px;}
+      .gallery-species{font-size:12px;color:#555;font-style:italic;margin:8px 0 4px 6px;}
+      .gallery-caption{font-size:10px;color:#777;margin-top:3px;word-break:break-word;
+                       max-width:110px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+      .gallery-date{font-size:10px;color:#aaa;}
+      .gallery-filter{margin-bottom:12px;}
+      /* Lightbox overlay */
+      #lb-overlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;
+                  background:rgba(0,0,0,0.88);z-index:9999;justify-content:center;
+                  align-items:center;flex-direction:column;}
+      #lb-overlay.active{display:flex;}
+      #lb-img{max-width:90vw;max-height:80vh;border-radius:8px;box-shadow:0 4px 32px #000;}
+      #lb-caption{color:#eee;font-size:14px;margin-top:12px;text-align:center;max-width:80vw;}
+      #lb-close{position:fixed;top:18px;right:28px;color:#fff;font-size:36px;
+                cursor:pointer;line-height:1;z-index:10000;}
+      #lb-prev,#lb-next{position:fixed;top:50%;transform:translateY(-50%);
+                         color:#fff;font-size:48px;cursor:pointer;
+                         background:rgba(0,0,0,0.3);padding:4px 14px;border-radius:6px;
+                         user-select:none;z-index:10000;}
+      #lb-prev{left:12px;} #lb-next{right:12px;}
     "))),
 
     tabItems(
@@ -416,7 +444,16 @@ ui <- dashboardPage(
                   class="btn-success",icon=icon("layer-group")),
                 br(),br(),textOutput("sm_feedback")
               ),
-              column(7,h4("Soil mix history"),DTOutput("soil_mix_history"))
+              column(7,
+                h4("Soil mix history"),
+                DTOutput("soil_mix_history"),
+                br(),
+                actionButton("sm_edit_btn","Edit selected mix",
+                  class="btn-sm btn-default",icon=icon("pen")),
+                actionButton("sm_del_btn","Delete selected mix",
+                  class="btn-sm btn-danger",icon=icon("trash"),
+                  style="margin-left:6px;")
+              )
             )
           ),
 
@@ -755,6 +792,67 @@ ui <- dashboardPage(
             )
           )
         ))
+      )
+
+      ,
+
+      # ══ GALLERY ══════════════════════════════════════════════════════════════
+      tabItem(tabName="gallery",
+        tags$div(
+          # Lightbox overlay (pure HTML/JS, no server round-trip)
+          tags$div(id="lb-overlay",
+            tags$span(id="lb-close", HTML("&times;"),
+              onclick="document.getElementById('lb-overlay').classList.remove('active')"),
+            tags$span(id="lb-prev", HTML("&#8249;"), onclick="lbStep(-1)"),
+            tags$img(id="lb-img", src=""),
+            tags$div(id="lb-caption",""),
+            tags$span(id="lb-next", HTML("&#8250;"), onclick="lbStep(1)"),
+            onclick="if(event.target===this)this.classList.remove('active')"
+          ),
+          tags$script(HTML("
+            var lbPhotos = [];
+            var lbIdx = 0;
+            function lbOpen(photos, idx) {
+              lbPhotos = photos; lbIdx = idx;
+              lbShow();
+              document.getElementById('lb-overlay').classList.add('active');
+            }
+            function lbShow() {
+              var p = lbPhotos[lbIdx];
+              document.getElementById('lb-img').src = p.src;
+              document.getElementById('lb-caption').innerHTML =
+                '<strong>' + p.name + '</strong>' +
+                (p.caption ? ' &mdash; ' + p.caption : '') +
+                '<br><span style=\'color:#aaa;font-size:12px;\'>' + p.date + '</span>';
+            }
+            function lbStep(dir) {
+              lbIdx = (lbIdx + dir + lbPhotos.length) % lbPhotos.length;
+              lbShow();
+            }
+            document.addEventListener('keydown', function(e) {
+              var ov = document.getElementById('lb-overlay');
+              if (!ov.classList.contains('active')) return;
+              if (e.key === 'ArrowRight') lbStep(1);
+              if (e.key === 'ArrowLeft')  lbStep(-1);
+              if (e.key === 'Escape') ov.classList.remove('active');
+            });
+          ")),
+          fluidRow(
+            box(width=12, title="Photo Gallery", status="success", solidHeader=TRUE,
+              fluidRow(class="gallery-filter",
+                column(3, selectInput("gal_family","Family",
+                  choices=c("All families"=""), width="100%")),
+                column(3, selectInput("gal_genus","Genus",
+                  choices=c("All genera"=""), width="100%")),
+                column(3, textInput("gal_search","Search species / caption",
+                  placeholder="type to filter...")),
+                column(3, br(),
+                  checkboxInput("gal_unphoto","Show plants with no photos",value=FALSE))
+              ),
+              uiOutput("gallery_ui")
+            )
+          )
+        )
       )
 
     ) # end tabItems
@@ -1494,7 +1592,105 @@ server <- function(input, output, session) {
         if(!is.na(pct)) paste0(r["component"]," (",pct,"%)") else r["component"]}),collapse=", ") else "\u2014"
       data.frame(date=mixes$date_set[i],components=comp_str,notes=mixes$notes[i] %||% "",stringsAsFactors=FALSE)
     }))
-    datatable(result,rownames=FALSE,options=list(pageLength=5,scrollX=TRUE))
+    datatable(result,selection="single",rownames=FALSE,options=list(pageLength=5,scrollX=TRUE))
+  })
+
+  selected_mix_id <- reactive({
+    rows <- input$soil_mix_history_rows_selected
+    req(length(rows)>0, input$sm_plant!="")
+    con <- get_con(); on.exit(dbDisconnect(con))
+    mixes <- dbGetQuery(con,sprintf("SELECT id FROM soil_mixes WHERE plant_id=%s ORDER BY date_set DESC",input$sm_plant))
+    req(rows<=nrow(mixes))
+    mixes$id[rows]
+  })
+
+  esm_n_rows <- reactiveVal(1L)
+
+  observeEvent(input$sm_edit_btn, {
+    mid <- selected_mix_id()
+    con <- get_con(); on.exit(dbDisconnect(con))
+    mix   <- dbGetQuery(con,sprintf("SELECT date_set,notes FROM soil_mixes WHERE id=%d",mid))
+    comps <- dbGetQuery(con,sprintf("SELECT component,percentage FROM soil_mix_components WHERE mix_id=%d ORDER BY percentage DESC",mid))
+    req(nrow(mix)>0)
+    n <- max(nrow(comps),1L); esm_n_rows(n)
+    comp_rows_ui <- lapply(seq_len(n),function(i){
+      cval <- if(i<=nrow(comps)) na_str(comps$component[i]) else ""
+      pval <- if(i<=nrow(comps)) comps$percentage[i] else NA_real_
+      fluidRow(
+        column(7,textInput(paste0("esm_comp_",i),label=if(i==1)"Component" else NULL,value=cval)),
+        column(4,numericInput(paste0("esm_pct_",i),label=if(i==1)"%" else NULL,value=pval,min=0,max=100,step=5)),
+        column(1,if(i>1) actionButton(paste0("esm_rem_",i),"",icon=icon("minus"),
+          class="btn-xs btn-danger",style="margin-top:22px;") else NULL))
+    })
+    showModal(modalDialog(title="Edit soil mix",size="m",easyClose=TRUE,
+      textInput("esm_date","Date (YYYY-MM-DD)",value=na_str(mix$date_set)),
+      h5("Components"),
+      tags$div(id="esm_comp_container",comp_rows_ui),
+      actionButton("esm_add_row","+ Add row",class="btn-sm btn-default",
+        style="margin-bottom:10px;"),
+      tags$div(style="font-weight:bold;font-size:13px;margin-bottom:8px;",
+        textOutput("esm_total_pct",inline=TRUE)),
+      textAreaInput("esm_notes","Notes",value=na_str(mix$notes),rows=2),
+      footer=tagList(modalButton("Cancel"),
+        actionButton("esm_save","Save changes",class="btn-primary"))))
+  })
+
+  observeEvent(input$esm_add_row,{
+    n <- esm_n_rows()+1L; esm_n_rows(n)
+    con <- get_con(); on.exit(dbDisconnect(con))
+    comp_choices <- distinct_vals(con,"soil_mix_components","component")
+    insertUI(selector="#esm_comp_container",where="beforeEnd",
+      ui=fluidRow(
+        column(7,selectizeInput(paste0("esm_comp_",n),label=NULL,choices=comp_choices,
+          options=list(create=TRUE,placeholder="e.g. pumice"))),
+        column(4,numericInput(paste0("esm_pct_",n),label=NULL,value=NA,min=0,max=100,step=5)),
+        column(1,actionButton(paste0("esm_rem_",n),"",icon=icon("minus"),
+          class="btn-xs btn-danger"))))
+  })
+
+  output$esm_total_pct <- renderText({
+    n <- esm_n_rows()
+    total <- sum(vapply(seq_len(n),function(i){
+      v <- input[[paste0("esm_pct_",i)]]; if(is.null(v)||is.na(v)) 0 else v},numeric(1)))
+    paste0("Total: ",total,"%")
+  })
+
+  observeEvent(input$esm_save,{
+    mid <- selected_mix_id(); n <- esm_n_rows()
+    components <- Filter(Negate(is.null),lapply(seq_len(n),function(i){
+      comp <- trimws(input[[paste0("esm_comp_",i)]] %||% "")
+      pct  <- input[[paste0("esm_pct_",i)]]
+      if(nchar(comp)>0) list(component=comp,
+        percentage=if(is.null(pct)||is.na(pct)) NA_real_ else pct) else NULL
+    }))
+    if(length(components)==0) return()
+    con <- get_con(); on.exit(dbDisconnect(con))
+    dbExecute(con,"UPDATE soil_mixes SET date_set=?,notes=? WHERE id=?",
+      list(trimws(input$esm_date),trimws(input$esm_notes %||% ""),mid))
+    dbExecute(con,"DELETE FROM soil_mix_components WHERE mix_id=?",list(mid))
+    for(comp in components)
+      dbExecute(con,"INSERT INTO soil_mix_components (mix_id,component,percentage) VALUES (?,?,?)",
+        list(mid,comp$component,comp$percentage))
+    removeModal(); esm_n_rows(1L); bump()
+  })
+
+  observeEvent(input$sm_del_btn,{
+    mid <- selected_mix_id()
+    con <- get_con(); on.exit(dbDisconnect(con))
+    mix <- dbGetQuery(con,sprintf("SELECT date_set FROM soil_mixes WHERE id=%d",mid))
+    showModal(modalDialog(title="Delete soil mix?",
+      tags$p("Permanently delete the soil mix recorded on ",tags$strong(mix$date_set),"?"),
+      tags$p(tags$em("All component records for this mix will also be removed.")),
+      footer=tagList(modalButton("Cancel"),
+        actionButton("sm_del_confirm","Delete",class="btn-danger"))))
+  })
+
+  observeEvent(input$sm_del_confirm,{
+    mid <- selected_mix_id()
+    con <- get_con(); on.exit(dbDisconnect(con))
+    dbExecute(con,"DELETE FROM soil_mix_components WHERE mix_id=?",list(mid))
+    dbExecute(con,"DELETE FROM soil_mixes WHERE id=?",list(mid))
+    removeModal(); bump()
   })
 
 
@@ -2079,6 +2275,191 @@ server <- function(input, output, session) {
       tags$p(paste0("\u2713 Imported ",n_ok," plant(s). Skipped ",n_skip," row(s)."),
              style="color:#2e7d32;font-weight:bold;"))
     bump()
+  })
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # GALLERY
+  # ════════════════════════════════════════════════════════════════════════════
+
+  # Populate family/genus filter dropdowns
+  observe({
+    refresh()
+    con <- get_con(); on.exit(dbDisconnect(con))
+    families <- c("All families"="", distinct_vals(con,"plants","family"))
+    updateSelectInput(session,"gal_family", choices=families)
+  })
+
+  observeEvent(input$gal_family, {
+    con <- get_con(); on.exit(dbDisconnect(con))
+    q <- "SELECT DISTINCT genus FROM plants WHERE genus IS NOT NULL AND genus != ''"
+    if (!is.null(input$gal_family) && nchar(input$gal_family)>0)
+      q <- paste0(q, sprintf(" AND family='%s'", gsub("'","''",input$gal_family)))
+    q <- paste0(q," ORDER BY genus")
+    genera <- dbGetQuery(con,q)$genus
+    updateSelectInput(session,"gal_genus",
+      choices=c("All genera"="", setNames(genera,genera)))
+  }, ignoreInit=FALSE)
+
+  output$gallery_ui <- renderUI({
+    refresh()
+    con <- get_con(); on.exit(dbDisconnect(con))
+
+    # Base plant query with filters
+    q_plants <- "SELECT p.id, p.family, p.genus, p.species, p.cultivar
+                 FROM plants p WHERE p.status='active'"
+    fam <- input$gal_family %||% ""
+    gen <- input$gal_genus  %||% ""
+    srch <- trimws(input$gal_search %||% "")
+    if (nchar(fam)>0)  q_plants <- paste0(q_plants, sprintf(" AND p.family='%s'",  gsub("'","''",fam)))
+    if (nchar(gen)>0)  q_plants <- paste0(q_plants, sprintf(" AND p.genus='%s'",   gsub("'","''",gen)))
+    if (nchar(srch)>0) q_plants <- paste0(q_plants, sprintf(
+      " AND (p.species LIKE '%%%1$s%%' OR p.cultivar LIKE '%%%1$s%%')", gsub("'","''",srch)))
+    q_plants <- paste0(q_plants," ORDER BY p.family, p.genus, p.species")
+    plants <- dbGetQuery(con, q_plants)
+
+    if (nrow(plants)==0)
+      return(tags$p("No plants match the current filter.",
+        style="color:#888;font-style:italic;padding:20px;"))
+
+    # Fetch all photos for matching plants in one query
+    if (nrow(plants)>0) {
+      pid_list <- paste(plants$id, collapse=",")
+      all_photos <- dbGetQuery(con, sprintf(
+        "SELECT plant_id, file_name, photo_date, caption
+         FROM photos WHERE plant_id IN (%s) ORDER BY photo_date DESC", pid_list))
+    } else {
+      all_photos <- data.frame(plant_id=integer(),file_name=character(),
+                                photo_date=character(),caption=character())
+    }
+
+    show_unphoto <- isTRUE(input$gal_unphoto)
+
+    # Group by family, then genus
+    families_present <- unique(plants$family)
+    families_present[is.na(families_present)|families_present==""] <- "(No family set)"
+    families_present <- sort(unique(families_present))
+
+    sections <- lapply(families_present, function(fam_name) {
+      fam_key <- if(fam_name=="(No family set)") "" else fam_name
+      fam_plants <- plants[
+        (is.na(plants$family)|plants$family=="") & fam_name=="(No family set)" |
+        (!is.na(plants$family) & plants$family==fam_key), ]
+
+      genera_in_fam <- sort(unique(fam_plants$genus))
+
+      genus_blocks <- lapply(genera_in_fam, function(g) {
+        g_plants <- fam_plants[fam_plants$genus==g, ]
+
+        species_blocks <- lapply(seq_len(nrow(g_plants)), function(j) {
+          plant <- g_plants[j,]
+          pid   <- plant$id
+          p_photos <- all_photos[all_photos$plant_id==pid, ]
+
+          if (nrow(p_photos)==0 && !show_unphoto) return(NULL)
+
+          # Build display name
+          sp_name <- trimws(paste(
+            if(!is.na(plant$species)&&plant$species!="") plant$species else "",
+            if(!is.na(plant$cultivar)&&plant$cultivar!="")
+              paste0("'",plant$cultivar,"'") else ""))
+          if (nchar(trimws(sp_name))==0) sp_name <- paste("plant ID", pid)
+
+          if (nrow(p_photos)==0) {
+            # Placeholder for plants with no photos
+            return(tags$div(class="gallery-species",
+              tags$em(sp_name), " ",
+              tags$span(style="color:#bbb;font-size:11px;","(no photos)")))
+          }
+
+          # Build JS photo array for this species (for lightbox)
+          js_photos <- paste0("[",
+            paste(sapply(seq_len(nrow(p_photos)), function(k) {
+              ph <- p_photos[k,]
+              cap <- if(!is.na(ph$caption)&&ph$caption!="") ph$caption else ""
+              sprintf('{src:"photos/%s",name:"%s %s",caption:"%s",date:"%s"}',
+                ph$file_name,
+                gsub('"',"'", g),
+                gsub('"',"'", sp_name),
+                gsub('"',"'", cap),
+                ph$photo_date)
+            }), collapse=","),
+          "]")
+
+          thumbs <- lapply(seq_len(nrow(p_photos)), function(k) {
+            ph  <- p_photos[k,]
+            cap <- if(!is.na(ph$caption)&&ph$caption!="") ph$caption else ""
+            tags$div(class="gallery-card",
+              tags$img(
+                src=paste0("photos/",ph$file_name),
+                class="gallery-thumb",
+                title=if(nchar(cap)>0) cap else paste(g, sp_name, ph$photo_date),
+                onclick=sprintf("lbOpen(%s,%d)", js_photos, k-1)
+              ),
+              if(nchar(cap)>0)
+                tags$div(class="gallery-caption", cap)
+              else NULL,
+              tags$div(class="gallery-date", ph$photo_date)
+            )
+          })
+
+          tags$div(class="gallery-section",
+            tags$div(class="gallery-species",
+              tags$em(sp_name),
+              tags$span(style="color:#aaa;font-size:11px;margin-left:6px;",
+                paste0("(", nrow(p_photos), " photo", if(nrow(p_photos)!=1)"s" else "", ")")),
+              tags$a(style="font-size:11px;margin-left:8px;color:#2e7d32;",
+                href="#", onclick=sprintf(
+                  "Shiny.setInputValue('gal_goto_plant',%d,{priority:'event'});return false;", pid),
+                "→ plant record")
+            ),
+            tags$div(style="display:flex;flex-wrap:wrap;", thumbs)
+          )
+        })
+
+        species_blocks <- Filter(Negate(is.null), species_blocks)
+        if (length(species_blocks)==0) return(NULL)
+
+        tags$div(
+          tags$div(class="gallery-genus",
+            tags$span(style="font-style:italic;", g),
+            tags$span(style="font-weight:400;font-size:13px;color:#888;margin-left:8px;",
+              paste0("(",length(species_blocks)," species)"))
+          ),
+          species_blocks
+        )
+      })
+
+      genus_blocks <- Filter(Negate(is.null), genus_blocks)
+      if (length(genus_blocks)==0) return(NULL)
+
+      tags$div(style="margin-bottom:24px;",
+        tags$h4(style="background:#e8f5e9;padding:8px 12px;border-radius:6px;
+                        border-left:4px solid #2e7d32;margin-bottom:10px;",
+          fam_name),
+        genus_blocks
+      )
+    })
+
+    sections <- Filter(Negate(is.null), sections)
+    if (length(sections)==0)
+      return(tags$p("No photos to display. Upload photos via Record Data → Photos.",
+        style="color:#888;font-style:italic;padding:20px;"))
+
+    n_photos_total <- nrow(all_photos)
+    n_plants_shown <- sum(sapply(plants$id, function(pid) any(all_photos$plant_id==pid)))
+
+    tagList(
+      tags$p(style="color:#555;font-size:13px;margin-bottom:12px;",
+        sprintf("%d photo%s across %d plant%s",
+          n_photos_total, if(n_photos_total!=1)"s" else "",
+          n_plants_shown, if(n_plants_shown!=1)"s" else "")),
+      sections
+    )
+  })
+
+  # "Jump to plant record" from gallery
+  observeEvent(input$gal_goto_plant, {
+    updateTabItems(session, "sidebar", "collection")
   })
 
 } # end server
