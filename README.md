@@ -146,7 +146,7 @@ Contributions are welcome!
 
 ## 🙏 Acknowledgements
 
-Built for the succulent and cactus collecting community. Inspired by the joy of a serious collection, and by the inadequacy of generic plant apps for managing one.
+Built for succulent and cactus growing enthusiasts and data freaks by Olly using CLAUDE LLM.
 
 Species reference links connect to the [Llifle Encyclopaedia of Living Forms](https://www.llifle.com/Encyclopedia/SUCCULENTS/).
 
