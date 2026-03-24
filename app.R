@@ -42,6 +42,21 @@ if (!dir.exists(PHOTO_DIR)) dir.create(PHOTO_DIR, recursive = TRUE)
 
 na_str <- function(x) if (is.null(x) || is.na(x)) "" else as.character(x)
 
+# Format stored YYYY-MM-DD dates for display as DD/MM/YYYY
+fmt_date <- function(x) {
+  if (is.null(x) || is.na(x) || trimws(as.character(x)) == "") return("—")
+  s <- trimws(as.character(x))
+  # Already DD/MM/YYYY
+  if (grepl("^\\d{2}/\\d{2}/\\d{4}$", s)) return(s)
+  # YYYY-MM-DD
+  if (grepl("^\\d{4}-\\d{2}-\\d{2}$", s)) {
+    parts <- strsplit(s, "-")[[1]]
+    return(paste0(parts[3], "/", parts[2], "/", parts[1]))
+  }
+  # Named month partial "September, 2025" — keep as-is
+  s
+}
+
 # ── Smart date parser for import ───────────────────────────────────────────────
 # Handles: Excel serial integers, ISO strings, d/m/y, m/d/y, "Month, YYYY",
 #          "Month YYYY", partial dates like "September, 2025" (stored as
@@ -123,9 +138,15 @@ init_db <- function(con) {
     start_date DATE, end_date DATE, flower_colour TEXT, pollination_notes TEXT,
     seeds_set INTEGER DEFAULT 0, seed_notes TEXT, notes TEXT)")
   dbExecute(con, "CREATE TABLE IF NOT EXISTS photos (
-    id INTEGER PRIMARY KEY AUTOINCREMENT, plant_id INTEGER NOT NULL REFERENCES plants(id),
+    id INTEGER PRIMARY KEY AUTOINCREMENT, plant_id INTEGER REFERENCES plants(id),
     photo_date DATE NOT NULL, file_name TEXT NOT NULL, caption TEXT,
-    flowering_id INTEGER REFERENCES flowering(id))")
+    flowering_id INTEGER REFERENCES flowering(id),
+    sowing_id INTEGER REFERENCES sowings(id))")
+  tryCatch(dbExecute(con, "ALTER TABLE photos ADD COLUMN sowing_id INTEGER REFERENCES sowings(id)"),
+           error=function(e) invisible(NULL))
+  # Make plant_id nullable for sowing photos (existing rows unaffected)
+  tryCatch(dbExecute(con, "ALTER TABLE photos ADD COLUMN _migration_done INTEGER DEFAULT 0"),
+           error=function(e) invisible(NULL))
   dbExecute(con, "CREATE TABLE IF NOT EXISTS soil_mixes (
     id INTEGER PRIMARY KEY AUTOINCREMENT, plant_id INTEGER NOT NULL REFERENCES plants(id),
     date_set DATE NOT NULL, notes TEXT)")
@@ -180,11 +201,12 @@ make_label_html <- function(plants_df, fields, w_mm, h_mm, font_pt, border) {
       name <- paste0(name, " '", r$cultivar, "'")
     lines <- character(0)
     if ("genus_species" %in% fields)
-      lines <- c(lines, sprintf('<div style="font-weight:bold;font-size:%dpt;line-height:1.2;">%s</div>',
-                                 font_pt, htmlEscape(trimws(name))))
+      lines <- c(lines, sprintf(
+        '<div style="font-weight:bold;font-style:italic;font-size:%dpt;line-height:1.3;">%s</div>',
+        font_pt + 2L, htmlEscape(trimws(name))))
     for (f in setdiff(fields, "genus_species")) {
-      val <- na_str(r[[f]])
-      if (nchar(val) == 0) next
+      val <- if(f == "acquired") fmt_date(r[[f]]) else na_str(r[[f]])
+      if (nchar(val) == 0 || val == "—") next
       lbl <- field_labels[[f]]
       lines <- c(lines, sprintf(
         '<div style="font-size:%dpt;line-height:1.2;"><span style="font-weight:600;">%s:</span> %s</div>',
@@ -273,6 +295,19 @@ ui <- dashboardPage(
 
       # ══ COLLECTION ═══════════════════════════════════════════════════════════
       tabItem(tabName="collection",
+        fluidRow(
+          box(width=12, title="Collection Summary", status="success",
+              solidHeader=TRUE, collapsible=TRUE, collapsed=TRUE,
+            fluidRow(
+              column(6, plotOutput("stats_family_pie", height="280px")),
+              column(6, plotOutput("stats_genus_pie",  height="280px"))
+            ),
+            fluidRow(column(12,
+              tags$p(textOutput("stats_summary", inline=TRUE),
+                style="text-align:center;color:#555;font-size:13px;margin-top:4px;")
+            ))
+          )
+        ),
         fluidRow(box(width=12,title="My Collection",status="success",solidHeader=TRUE,
           fluidRow(
             column(3,selectInput("col_status","Status",
@@ -284,9 +319,7 @@ ui <- dashboardPage(
                 class="btn-warning btn-sm",icon=icon("box-archive")),
               actionButton("col_hard_delete_btn","Delete selected",
                 class="btn-danger btn-sm",icon=icon("trash"),
-                style="margin-left:6px;"),
-              tags$span(id="col_sel_count",style="margin-left:10px;color:#555;font-size:13px;",
-                textOutput("col_sel_count",inline=TRUE))
+                style="margin-left:6px;")
             )
           ),
           DTOutput("collection_table")
@@ -335,6 +368,15 @@ ui <- dashboardPage(
             textAreaInput("ap_toxicity","Toxicity / notable properties",rows=2,
               placeholder="e.g. mildly toxic if ingested; latex a skin irritant"),
             textAreaInput("ap_notes","General notes",rows=3),
+            hr(),
+            h4("Photo (optional)"),
+            tags$p(tags$em("Add a photo of the plant when creating the record. More photos can be added later via Record Data → Photos.",
+              style="color:#666;font-size:13px;")),
+            fileInput("ap_photo","",
+              accept=c("image/jpeg","image/png","image/jpg","image/webp"),
+              multiple=TRUE,
+              buttonLabel="Choose photo(s)..."),
+            textInput("ap_photo_caption","Caption"),
             actionButton("ap_submit","Add Plant",class="btn-success btn-lg",icon=icon("seedling")),
             br(),br(),uiOutput("ap_feedback_ui")
           ),
@@ -462,12 +504,11 @@ ui <- dashboardPage(
               ),
               column(7,
                 h4("Photo library"),
+                tags$p(tags$em(
+                  "Click the ✕ button on any photo to delete it.",
+                  style="color:#666;font-size:13px;")),
                 selectInput("ph_filter","Filter by plant",choices=NULL),
-                uiOutput("ph_gallery"),
-                br(),
-                actionButton("ph_del_btn","Delete selected photo",
-                  class="btn-sm btn-danger",icon=icon("trash")),
-                uiOutput("ph_sel_ui")
+                uiOutput("ph_gallery")
               )
             )
           )
@@ -596,6 +637,19 @@ ui <- dashboardPage(
                   placeholder="condition, vigour, size notes..."),
                 actionButton("sl_submit","Save Count",class="btn-success",icon=icon("hashtag")),
                 br(),br(),textOutput("sl_feedback"),
+                tags$details(style="margin-top:8px;",
+                  tags$summary(style="cursor:pointer;color:#1565c0;font-size:13px;",
+                    "📷 Attach photo to this count (optional)"),
+                  tags$div(style="padding:8px 0 4px 0;",
+                    fileInput("sl_photo",NULL,
+                      accept=c("image/jpeg","image/png","image/jpg","image/webp"),
+                      buttonLabel="Choose photo..."),
+                    actionButton("sl_photo_submit","Upload photo",
+                      class="btn-sm btn-info",icon=icon("camera")),
+                    br(),br(),
+                    textOutput("sl_photo_feedback")
+                  )
+                ),
                 hr(),h4("Sowing event"),
                 tags$p(tags$em("Record treatments, pathogens, or cultivation events.",
                   style="color:#666;font-size:13px;")),
@@ -609,7 +663,8 @@ ui <- dashboardPage(
                   placeholder="product used, concentration, affected seedlings..."),
                 actionButton("se_submit","Save Event",
                   class="btn-warning",icon=icon("triangle-exclamation")),
-                br(),br(),textOutput("se_feedback")
+                br(),br(),textOutput("se_feedback"),
+
               ),
               column(7,
                 h4("Count history"),DTOutput("sl_history"),
@@ -814,8 +869,9 @@ ui <- dashboardPage(
 # ══════════════════════════════════════════════════════════════════════════════
 server <- function(input, output, session) {
 
-  refresh <- reactiveVal(0)
-  bump    <- function() refresh(refresh() + 1)
+  refresh          <- reactiveVal(0)
+  bump             <- function() refresh(refresh() + 1)
+  sow_photo_refresh <- reactiveVal(0)
 
   # ── Shared dropdowns ────────────────────────────────────────────────────────
   plant_choices <- reactive({
@@ -898,20 +954,26 @@ server <- function(input, output, session) {
     df$dormancy <- dplyr::recode(df$dormancy %||% "none",
       "summer"="☀ Summer","winter"="❄ Winter","none"="—",.default="—")
     df$sowing_id <- ifelse(!is.na(df$sowing_id),"🌱","")
+    df$acquired  <- sapply(df$acquired, fmt_date)
     con <- get_con(); on.exit(dbDisconnect(con))
+    # Fetch the most recently inserted photo per plant (MAX(id) avoids
+    # timestamp ties that broke setNames when multiple photos shared a date)
     thumbs <- dbGetQuery(con,
-      "SELECT plant_id, file_name FROM photos p1
-       WHERE photo_date = (SELECT MAX(photo_date) FROM photos p2 WHERE p2.plant_id=p1.plant_id)
-       GROUP BY plant_id")
-    thumb_map <- setNames(thumbs$file_name, as.character(thumbs$plant_id))
+      "SELECT plant_id, file_name FROM photos
+       WHERE id IN (SELECT MAX(id) FROM photos GROUP BY plant_id)")
+    # Deduplicate in R as a safety net — one row per plant_id
+    thumbs <- thumbs[!duplicated(thumbs$plant_id), ]
+    thumb_map <- setNames(as.character(thumbs$file_name),
+                          as.character(thumbs$plant_id))
     df$photo <- ifelse(
       as.character(df$id) %in% names(thumb_map),
       paste0('<img src="photos/', thumb_map[as.character(df$id)],
-             '" style="height:40px;width:40px;object-fit:cover;border-radius:4px;border:1px solid #ddd;" ',
-             'onerror="this.style.display:none">'),
+             '" style="height:40px;width:40px;object-fit:cover;',
+             'border-radius:4px;border:1px solid #ddd;" ',
+             'onerror="this.style.display=\'none\';">'),
       "")
     df <- df[, c("photo", setdiff(names(df), "photo"))]
-    datatable(df, selection="multiple", rownames=FALSE, escape=FALSE,
+    datatable(df, selection="single", rownames=FALSE, escape=FALSE,
               options=list(pageLength=15, scrollX=TRUE, stateSave=TRUE,
                 columnDefs=list(list(orderable=FALSE, targets=0),
                                 list(width="50px", targets=0))))
@@ -926,10 +988,55 @@ server <- function(input, output, session) {
     df$id[rows]
   })
 
-  # Count label for selected rows
-  output$col_sel_count <- renderText({
-    n <- length(input$collection_table_rows_selected)
-    if (n == 0) "" else paste0(n, " selected")
+  # Collection stats pie charts (active plants only, ignores filters)
+  # Helper: build a clean ggplot2 bar chart (horizontal) to avoid label overlap
+  make_collection_bar <- function(df, title_str) {
+    if (nrow(df)==0) return(NULL)
+    df$grp <- factor(df$grp, levels=rev(df$grp))
+    pal    <- colorRampPalette(c("#1b5e20","#2e7d32","#388e3c","#66bb6a","#a5d6a7","#c8e6c9"))
+    ggplot(df, aes(x=grp, y=n, fill=grp)) +
+      geom_col(width=0.7, show.legend=FALSE) +
+      geom_text(aes(label=n), hjust=-0.2, size=3.5, colour="#333") +
+      scale_fill_manual(values=pal(nrow(df))) +
+      scale_y_continuous(expand=expansion(mult=c(0,0.15))) +
+      coord_flip() +
+      labs(title=title_str, x=NULL, y="Plants") +
+      theme_minimal(base_size=12) +
+      theme(plot.title=element_text(colour="#2e7d32", face="bold", size=13),
+            panel.grid.major.y=element_blank(),
+            axis.text.y=element_text(size=10))
+  }
+
+  output$stats_family_pie <- renderPlot({
+    con <- get_con(); on.exit(dbDisconnect(con))
+    df  <- dbGetQuery(con,
+      "SELECT COALESCE(NULLIF(family,''),'(Unknown)') AS grp, COUNT(*) AS n
+       FROM plants WHERE status='active' GROUP BY grp ORDER BY n ASC")
+    print(make_collection_bar(df, "By Family"))
+  })
+
+  output$stats_genus_pie <- renderPlot({
+    con <- get_con(); on.exit(dbDisconnect(con))
+    df  <- dbGetQuery(con,
+      "SELECT genus AS grp, COUNT(*) AS n
+       FROM plants WHERE status='active' AND genus IS NOT NULL AND genus!=''
+       GROUP BY genus ORDER BY n ASC")
+    if (nrow(df)==0) return(NULL)
+    # Keep top 15 genera, collapse rest into Other
+    if (nrow(df)>15) {
+      other_n <- sum(df$n[1:(nrow(df)-15)])
+      df      <- rbind(data.frame(grp="Other (smaller genera)", n=other_n),
+                       tail(df,15))
+    }
+    print(make_collection_bar(df, "By Genus"))
+  })
+
+  output$stats_summary <- renderText({
+    con <- get_con(); on.exit(dbDisconnect(con))
+    n_plants  <- dbGetQuery(con,"SELECT COUNT(*) AS n FROM plants WHERE status='active'")$n
+    n_genera  <- dbGetQuery(con,"SELECT COUNT(DISTINCT genus) AS n FROM plants WHERE status='active'")$n
+    n_families<- dbGetQuery(con,"SELECT COUNT(DISTINCT family) AS n FROM plants WHERE status='active' AND family IS NOT NULL AND family!=''")$n
+    sprintf("%d active plants across %d genera in %d families", n_plants, n_genera, n_families)
   })
 
   # Detail panel
@@ -1000,17 +1107,86 @@ server <- function(input, output, session) {
           tags$p(style="white-space:pre-wrap;",p$notes %||% "\u2014")
         )
       ),
-      if(nrow(photos)>0) tagList(hr(),
-        tags$p(tags$span(paste0("Photos (",nrow(photos),"):"),class="detail-label")),
-        tags$div(lapply(seq_len(min(nrow(photos),10)),function(i){
-          fname <- photos$file_name[i]; cap <- photos$caption[i] %||% photos$photo_date[i]
-          tags$div(style="display:inline-block;text-align:center;vertical-align:top;margin:4px;",
-            tags$a(href=paste0("photos/",fname),target="_blank",
-              tags$img(src=paste0("photos/",fname),class="photo-thumb",title=cap,alt=cap)),
-            tags$br(),tags$small(photos$photo_date[i],style="color:#777;"))
-        }))
-      ) else NULL
+      # Photos section — always shown so user can add photos even if none yet
+      tagList(
+        hr(),
+        tags$p(tags$span(
+          if(nrow(photos)>0) paste0("Photos (",nrow(photos),"):") else "Photos:",
+          class="detail-label")),
+        if(nrow(photos)>0)
+          tags$div(style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;",
+            lapply(seq_len(nrow(photos)), function(i){
+              ph    <- photos[i,]
+              fname <- ph$file_name
+              cap   <- if(!is.na(ph$caption)&&ph$caption!="") ph$caption else fmt_date(ph$photo_date)
+              # Fetch photo id for the delete button
+              ph_row <- dbGetQuery(con,
+                sprintf("SELECT id FROM photos WHERE file_name='%s' LIMIT 1",
+                  gsub("'","''",fname)))
+              tags$div(style="position:relative;text-align:center;width:110px;",
+                tags$a(href=paste0("photos/",fname), target="_blank",
+                  tags$img(src=paste0("photos/",fname),
+                    style="width:100px;height:100px;object-fit:cover;border-radius:6px;border:1px solid #ddd;",
+                    title=cap, alt=cap)),
+                tags$span(
+                  HTML("&times;"),
+                  onclick=sprintf("Shiny.setInputValue('ph_del_click','%s',{priority:'event'})",
+                                  fname),
+                  style="position:absolute;top:2px;right:6px;background:#c62828;color:#fff;
+                         border-radius:3px;padding:0 5px;font-size:13px;line-height:1.6;
+                         cursor:pointer;opacity:0.9;font-weight:bold;"),
+                tags$div(style="font-size:10px;color:#777;margin-top:3px;",
+                  fmt_date(ph$photo_date))
+              )
+            })
+          )
+        else tags$p("No photos yet.", style="color:#aaa;font-style:italic;font-size:13px;"),
+        # Add photo inline
+        tags$div(style="background:#f9f9f9;border:1px solid #e0e0e0;border-radius:6px;
+                         padding:10px;margin-top:6px;",
+          tags$p(tags$strong("Add photo"), style="margin:0 0 8px 0;font-size:13px;"),
+          fluidRow(
+            column(4, dateInput("dp_photo_date","Date taken",value=Sys.Date())),
+            column(8, textInput("dp_photo_caption","Caption (optional)",placeholder="e.g. first flower"))
+          ),
+          fileInput("dp_photo_file", NULL,
+            accept=c("image/jpeg","image/png","image/jpg","image/webp"),
+            multiple=TRUE, buttonLabel="Choose photo(s)..."),
+          actionButton("dp_photo_submit","Upload",
+            class="btn-sm btn-success", icon=icon("camera")),
+          br(),br(),
+          textOutput("dp_photo_feedback")
+        )
+      )
     ))
+  })
+
+  # Detail panel photo upload
+  observeEvent(input$dp_photo_submit, {
+    pid <- selected_plant_id(); req(!is.null(pid))
+    files <- input$dp_photo_file
+    if (is.null(files) || nrow(files)==0) {
+      output$dp_photo_feedback <- renderText("Please choose at least one photo file.")
+      return()
+    }
+    con <- get_con()
+    n_saved <- 0L
+    for (i in seq_len(nrow(files))) {
+      ext <- tolower(file_ext(files$name[i]))
+      if (!ext %in% c("jpg","jpeg","png","webp")) next
+      new_name <- sprintf("p%d_%s_%02d.%s",
+        as.integer(pid), format(Sys.time(),"%Y%m%d%H%M%S"), i, ext)
+      file.copy(files$datapath[i], file.path(PHOTO_DIR, new_name))
+      dbExecute(con,
+        "INSERT INTO photos (plant_id,photo_date,file_name,caption) VALUES (?,?,?,?)",
+        list(as.integer(pid), as.character(input$dp_photo_date),
+             new_name, trimws(input$dp_photo_caption %||% "")))
+      n_saved <- n_saved + 1L
+    }
+    dbDisconnect(con)
+    output$dp_photo_feedback <- renderText(
+      paste0("✓ ", n_saved, " photo(s) uploaded."))
+    bump()
   })
 
   # Archive
@@ -1245,12 +1421,34 @@ server <- function(input, output, session) {
            trimws(input$ap_supplier %||% ""),as.character(input$ap_acquired),
            trimws(input$ap_origin_geo %||% ""),trimws(input$ap_origin_soil %||% ""),
            input$ap_dormancy,llifle,trimws(input$ap_toxicity %||% ""),trimws(input$ap_notes %||% ""),sow_id))
-    output$ap_feedback_ui <- renderUI(tags$p("\u2713 Plant added.",style="color:#2e7d32;font-weight:bold;"))
+    new_pid <- dbGetQuery(con,"SELECT last_insert_rowid() AS id")$id
+    # Save any attached photos
+    photo_files <- input$ap_photo
+    n_photos <- 0L
+    if (!is.null(photo_files) && nrow(photo_files)>0) {
+      for (i in seq_len(nrow(photo_files))) {
+        ext <- tolower(file_ext(photo_files$name[i]))
+        if (!ext %in% c("jpg","jpeg","png","webp")) next
+        new_name <- sprintf("p%d_%s_%02d.%s",
+          new_pid, format(Sys.time(),"%Y%m%d%H%M%S"), i, ext)
+        file.copy(photo_files$datapath[i], file.path(PHOTO_DIR, new_name))
+        dbExecute(con,
+          "INSERT INTO photos (plant_id,photo_date,file_name,caption) VALUES (?,?,?,?)",
+          list(new_pid, as.character(input$ap_acquired), new_name,
+               trimws(input$ap_photo_caption %||% "")))
+        n_photos <- n_photos + 1L
+      }
+    }
+    msg <- if(n_photos>0)
+      paste0("✓ Plant added with ", n_photos, " photo", if(n_photos>1)"s" else "", ".")
+    else "✓ Plant added."
+    output$ap_feedback_ui <- renderUI(tags$p(msg, style="color:#2e7d32;font-weight:bold;"))
     output$ap_prefill_banner <- renderUI(NULL)
     bump()
     for(id in c("ap_genus","ap_species","ap_cultivar","ap_common","ap_supplier","ap_llifle"))
       updateTextInput(session,id,value="")
-    for(id in c("ap_toxicity","ap_notes")) updateTextAreaInput(session,id,value="")
+    for(id in c("ap_toxicity","ap_notes","ap_photo_caption"))
+      updateTextAreaInput(session,id,value="")
     updateSelectInput(session,"ap_dormancy",selected="none")
     updateSelectInput(session,"ap_sowing",selected="")
     updateSelectizeInput(session,"ap_family",     selected="", options=list(create=TRUE))
@@ -1288,6 +1486,7 @@ server <- function(input, output, session) {
   output$recent_measurements <- renderDT({
     refresh(); con <- get_con(); on.exit(dbDisconnect(con))
     df <- dbGetQuery(con,"SELECT m.id,p.genus,p.species,m.meas_date AS date,m.height_mm,m.width_mm,m.offsets,m.notes FROM measurements m JOIN plants p ON m.plant_id=p.id ORDER BY m.meas_date DESC LIMIT 100")
+    df$date <- sapply(df$date, fmt_date)
     datatable(df,selection="single",rownames=FALSE,options=list(pageLength=10,scrollX=TRUE))
   })
 
@@ -1352,7 +1551,9 @@ server <- function(input, output, session) {
   output$flowering_history <- renderDT({
     refresh(); con <- get_con(); on.exit(dbDisconnect(con))
     df <- dbGetQuery(con,"SELECT f.id,p.genus,p.species,f.start_date,f.end_date,f.flower_colour,f.seeds_set,f.pollination_notes FROM flowering f JOIN plants p ON f.plant_id=p.id ORDER BY f.start_date DESC")
-    df$seeds_set <- ifelse(df$seeds_set==1L,"Yes","No")
+    df$seeds_set  <- ifelse(df$seeds_set==1L,"Yes","No")
+    df$start_date <- sapply(df$start_date, fmt_date)
+    df$end_date   <- sapply(df$end_date,   fmt_date)
     datatable(df,selection="single",rownames=FALSE,options=list(pageLength=10,scrollX=TRUE))
   })
 
@@ -1407,7 +1608,7 @@ server <- function(input, output, session) {
         tags$p("Please choose at least one photo file.", style="color:red;"))
       return()
     }
-    con <- get_con(); on.exit(dbDisconnect(con))
+    con <- get_con()
     n_saved <- 0L
     for (i in seq_len(nrow(files))) {
       ext <- tolower(file_ext(files$name[i]))
@@ -1421,6 +1622,7 @@ server <- function(input, output, session) {
              new_name, trimws(input$ph_caption %||% "")))
       n_saved <- n_saved + 1L
     }
+    dbDisconnect(con)
     output$ph_feedback_ui <- renderUI(
       tags$p(paste0("✓ ", n_saved, " photo(s) uploaded."),
              style="color:#2e7d32;font-weight:bold;"))
@@ -1440,42 +1642,48 @@ server <- function(input, output, session) {
       return(tags$p("No photos yet.", style="color:#888;font-style:italic;"))
     tags$div(style="display:flex;flex-wrap:wrap;gap:10px;",
       lapply(seq_len(nrow(photos)), function(i) {
-        r      <- photos[i,]
-        fname  <- r$file_name
-        cap    <- if (!is.na(r$caption) && r$caption != "") r$caption else ""
-        pname  <- trimws(paste(r$genus, r$species %||% ""))
-        is_sel <- isTRUE(ph_selected() == fname)
-        brd    <- if (is_sel) "border:3px solid #2e7d32;" else "border:2px solid transparent;"
-        tags$div(style=paste0("text-align:center;cursor:pointer;width:110px;",brd,"border-radius:6px;padding:3px;"),
-          onclick=sprintf("Shiny.setInputValue('ph_click','%s',{priority:'event'})", fname),
+        r     <- photos[i,]
+        fname <- r$file_name
+        cap   <- if (!is.na(r$caption) && r$caption != "") r$caption else ""
+        pname <- trimws(paste(r$genus, r$species %||% ""))
+        tags$div(style="position:relative;width:110px;text-align:center;",
           tags$a(href=paste0("photos/",fname), target="_blank",
-            onclick="event.stopPropagation();",
             tags$img(src=paste0("photos/",fname),
-              style="width:100px;height:100px;object-fit:cover;border-radius:4px;",
+              style="width:100px;height:100px;object-fit:cover;border-radius:6px;
+                     border:1px solid #ddd;display:block;margin:0 auto;",
               title=paste0(pname, if(nchar(cap)>0) paste0(" — ",cap) else ""))),
-          tags$div(style="font-size:10px;color:#555;margin-top:3px;word-break:break-word;", pname),
+          tags$span(
+            HTML("&times;"),
+            onclick=sprintf("Shiny.setInputValue('ph_del_click','%s',{priority:'event'})",
+                            r$file_name),
+            style="position:absolute;top:2px;right:6px;background:#c62828;color:#fff;
+                   border-radius:3px;padding:0 5px;font-size:13px;line-height:1.6;
+                   cursor:pointer;opacity:0.9;font-weight:bold;"),
+          tags$div(style="font-size:10px;color:#555;margin-top:3px;
+                          word-break:break-word;max-width:100px;
+                          margin-left:auto;margin-right:auto;", pname),
           tags$div(style="font-size:10px;color:#999;", r$photo_date)
         )
       })
     )
   })
 
-  observeEvent(input$ph_click, {
-    clicked <- input$ph_click
-    if (isTRUE(ph_selected() == clicked)) ph_selected(NULL) else ph_selected(clicked)
-  })
-
-  output$ph_sel_ui <- renderUI({
-    sel <- ph_selected(); if (is.null(sel)) return(NULL)
-    tags$p(tags$em(paste0("Selected: ", sel)), style="font-size:12px;color:#555;margin-top:6px;")
-  })
-
-  observeEvent(input$ph_del_btn, {
-    sel <- ph_selected(); req(!is.null(sel))
+  # Single observer for all photo delete clicks.
+  # Delete buttons set input$ph_del_click to the photo file_name via JS.
+  observeEvent(input$ph_del_click, {
+    fname <- input$ph_del_click; req(!is.null(fname), nchar(fname)>0)
+    ph_selected(fname)
+    con <- get_con(); on.exit(dbDisconnect(con))
+    pname <- dbGetQuery(con,
+      sprintf("SELECT COALESCE(pl.genus||' '||COALESCE(pl.species,''), 'this plant') AS nm
+               FROM photos p LEFT JOIN plants pl ON p.plant_id=pl.id
+               WHERE p.file_name='%s' LIMIT 1", gsub("'","''",fname)))
+    label <- if(nrow(pname)>0) pname$nm[1] else "this plant"
     showModal(modalDialog(title="Delete photo?",
-      tags$p("Permanently delete ", tags$strong(sel), "?"),
-      tags$p(tags$em("The image file and database record will both be removed.")),
-      footer=tagList(modalButton("Cancel"),
+      tags$p("Permanently delete this photo of ", tags$strong(label), "?"),
+      tags$p(tags$em("The image file and its record will both be removed.")),
+      footer=tagList(
+        modalButton("Cancel"),
         actionButton("ph_del_confirm","Delete",class="btn-danger"))))
   })
 
@@ -1488,7 +1696,7 @@ server <- function(input, output, session) {
     removeModal(); ph_selected(NULL); bump()
   })
 
-  # ════════════════════════════════════════════════════════════════════════════
+  # ════════════════════════════════════════════
   # RECORD > SOIL MIX
   # ════════════════════════════════════════════════════════════════════════════
   n_soil_rows <- reactiveVal(3)
@@ -1539,7 +1747,7 @@ server <- function(input, output, session) {
       comp_str <- if(nrow(comps)>0) paste(apply(comps,1,function(r){
         pct <- suppressWarnings(as.numeric(r["percentage"]))
         if(!is.na(pct)) paste0(r["component"]," (",pct,"%)") else r["component"]}),collapse=", ") else "\u2014"
-      data.frame(date=mixes$date_set[i],components=comp_str,notes=mixes$notes[i] %||% "",stringsAsFactors=FALSE)
+      data.frame(date=fmt_date(mixes$date_set[i]),components=comp_str,notes=mixes$notes[i] %||% "",stringsAsFactors=FALSE)
     }))
     datatable(result,selection="single",rownames=FALSE,options=list(pageLength=5,scrollX=TRUE))
   })
@@ -1659,6 +1867,7 @@ server <- function(input, output, session) {
     if(!is.null(input$e_filter_plant)&&input$e_filter_plant!="")
       q <- paste0(q," WHERE e.plant_id=",input$e_filter_plant)
     df <- dbGetQuery(con,paste0(q," ORDER BY e.event_date DESC"))
+    df$date <- sapply(df$date, fmt_date)
     datatable(df,selection="single",rownames=FALSE,options=list(pageLength=15,scrollX=TRUE))
   })
 
@@ -1753,6 +1962,7 @@ server <- function(input, output, session) {
   output$latest_measurements <- renderDT({
     refresh(); con <- get_con(); on.exit(dbDisconnect(con))
     df <- dbGetQuery(con,"SELECT p.genus,p.species,p.cultivar,MAX(m.meas_date) AS last_measured,m.height_mm,m.width_mm,m.offsets FROM plants p LEFT JOIN measurements m ON p.id=m.plant_id WHERE p.status='active' GROUP BY p.id ORDER BY p.genus,p.species")
+    df$last_measured <- sapply(df$last_measured, fmt_date)
     datatable(df,rownames=FALSE,options=list(pageLength=20,scrollX=TRUE))
   })
 
@@ -1804,12 +2014,16 @@ server <- function(input, output, session) {
   output$sowings_table_new <- renderDT({
     refresh(); con <- get_con(); on.exit(dbDisconnect(con))
     df <- dbGetQuery(con,"SELECT id,genus,species,sow_date,n_seeds,date_first_germ FROM sowings ORDER BY sow_date DESC")
+    df$sow_date        <- sapply(df$sow_date,        fmt_date)
+    df$date_first_germ <- sapply(df$date_first_germ, fmt_date)
     datatable(df,rownames=FALSE,options=list(pageLength=8,scrollX=TRUE))
   })
 
   output$sowings_table_main <- renderDT({
     refresh(); con <- get_con(); on.exit(dbDisconnect(con))
     df <- dbGetQuery(con,"SELECT s.id,s.genus,s.species,s.sow_date,s.n_seeds,s.date_first_germ,s.seed_origin,(SELECT COUNT(*) FROM seedling_counts sc WHERE sc.sowing_id=s.id) AS count_records,(SELECT COUNT(*) FROM plants p WHERE p.sowing_id=s.id) AS graduated FROM sowings s ORDER BY s.sow_date DESC")
+    df$sow_date        <- sapply(df$sow_date,        fmt_date)
+    df$date_first_germ <- sapply(df$date_first_germ, fmt_date)
     datatable(df,selection="single",rownames=FALSE,options=list(pageLength=10,scrollX=TRUE))
   })
 
@@ -1882,44 +2096,97 @@ server <- function(input, output, session) {
     s   <- dbGetQuery(con,sprintf("SELECT * FROM sowings WHERE id=%d",sid))
     if(nrow(s)==0) return(NULL)
     last_ct <- dbGetQuery(con,sprintf("SELECT count_date,n_surviving FROM seedling_counts WHERE sowing_id=%d ORDER BY count_date DESC LIMIT 1",sid))
-    pct_str <- "\u2014"
+    pct_str <- "—"
     if(nrow(last_ct)>0&&!is.na(s$n_seeds)&&s$n_seeds>0)
-      pct_str <- paste0(last_ct$n_surviving," / ",s$n_seeds," (",round(last_ct$n_surviving/s$n_seeds*100,1),"%) as at ",last_ct$count_date)
+      pct_str <- paste0(last_ct$n_surviving," / ",s$n_seeds," (",round(last_ct$n_surviving/s$n_seeds*100,1),"%) as at ",fmt_date(last_ct$count_date))
     else if(nrow(last_ct)>0)
-      pct_str <- paste0(last_ct$n_surviving," surviving as at ",last_ct$count_date)
+      pct_str <- paste0(last_ct$n_surviving," surviving as at ",fmt_date(last_ct$count_date))
+
+    # Development diary photos
+    sow_photos <- dbGetQuery(con, sprintf(
+      "SELECT file_name, photo_date, caption FROM photos
+       WHERE sowing_id=%d ORDER BY photo_date ASC", sid))
+
     fluidRow(box(width=12,title=paste(s$genus,s$species %||% "","— sown",s$sow_date),status="warning",collapsible=TRUE,
       fluidRow(
         column(4,
-          tags$p(tags$span("Seed origin:",class="detail-label"),s$seed_origin %||% "\u2014"),
-          tags$p(tags$span("Seed age:",class="detail-label"),s$seed_age %||% "\u2014"),
-          tags$p(tags$span("Seeds sown:",class="detail-label"),s$n_seeds %||% "\u2014"),
-          tags$p(tags$span("First germinated:",class="detail-label"),s$date_first_germ %||% "\u2014"),
+          tags$p(tags$span("Seed origin:",class="detail-label"),s$seed_origin %||% "—"),
+          tags$p(tags$span("Seed age:",class="detail-label"),s$seed_age %||% "—"),
+          tags$p(tags$span("Seeds sown:",class="detail-label"),s$n_seeds %||% "—"),
+          tags$p(tags$span("First germinated:",class="detail-label"),fmt_date(s$date_first_germ)),
           tags$p(tags$span("Surviving (latest):",class="detail-label"),pct_str)
         ),
         column(4,
-          tags$p(tags$span("Enclosure:",class="detail-label"),s$enclosure_type %||% "\u2014"),
-          tags$p(tags$span("Enclosure opened:",class="detail-label"),s$enclosure_opened %||% "\u2014"),
-          tags$p(tags$span("Enclosure removed:",class="detail-label"),s$enclosure_removed %||% "\u2014"),
+          tags$p(tags$span("Enclosure:",class="detail-label"),s$enclosure_type %||% "—"),
+          tags$p(tags$span("Enclosure opened:",class="detail-label"),fmt_date(s$enclosure_opened)),
+          tags$p(tags$span("Enclosure removed:",class="detail-label"),fmt_date(s$enclosure_removed)),
           tags$p(tags$span("Heat mat:",class="detail-label"),
             if(isTRUE(s$heat_mat==1L)) paste("Yes —",s$heat_mat_notes %||% "") else "No"),
-          tags$p(tags$span("Lights:",class="detail-label"),s$lights_notes %||% "\u2014")
+          tags$p(tags$span("Lights:",class="detail-label"),s$lights_notes %||% "—")
         ),
         column(4,
-          tags$p(tags$span("Watering:",class="detail-label"),s$watering_notes %||% "\u2014"),
+          tags$p(tags$span("Watering:",class="detail-label"),s$watering_notes %||% "—"),
           tags$p(tags$span("Notes:",class="detail-label")),
-          tags$p(style="white-space:pre-wrap;",s$notes %||% "\u2014")
+          tags$p(style="white-space:pre-wrap;",s$notes %||% "—")
         )
-      )
+      ),
+      if(nrow(sow_photos)>0) tagList(
+        hr(),
+        tags$p(tags$span(paste0("Development diary (",nrow(sow_photos)," photo",
+          if(nrow(sow_photos)!=1)"s" else "","):"), class="detail-label")),
+        tags$div(style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;",
+          lapply(seq_len(nrow(sow_photos)), function(i){
+            ph  <- sow_photos[i,]
+            cap <- if(!is.na(ph$caption)&&ph$caption!="") ph$caption else fmt_date(ph$photo_date)
+            tags$div(style="text-align:center;width:110px;",
+              tags$a(href=paste0("photos/",ph$file_name), target="_blank",
+                tags$img(src=paste0("photos/",ph$file_name),
+                  class="photo-thumb",
+                  style="width:100px;height:100px;object-fit:cover;border-radius:6px;",
+                  title=cap, alt=cap)),
+              tags$div(style="font-size:10px;color:#777;margin-top:3px;",
+                fmt_date(ph$photo_date))
+            )
+          })
+        )
+      ) else NULL
     ))
   })
 
+  # outputOptions for conditionalPanel triggers
+  # Helper: save a sowing photo to the photos table
   observeEvent(input$sl_submit,{
     req(input$sl_sowing!="",!is.na(input$sl_n))
     con <- get_con(); on.exit(dbDisconnect(con))
     dbExecute(con,"INSERT INTO seedling_counts (sowing_id,count_date,n_surviving,notes) VALUES (?,?,?,?)",
       list(as.integer(input$sl_sowing),as.character(input$sl_date),as.integer(input$sl_n),trimws(input$sl_notes %||% "")))
-    output$sl_feedback <- renderText("\u2713 Count saved."); bump()
+    output$sl_feedback <- renderText("✓ Count saved."); bump()
   })
+
+  observeEvent(input$sl_photo_submit,{
+    req(input$sl_sowing!="")
+    files <- input$sl_photo
+    if (is.null(files) || nrow(files)==0) {
+      output$sl_photo_feedback <- renderText("Please choose a photo first.")
+      return()
+    }
+    ext <- tolower(file_ext(files$name[1]))
+    if (!ext %in% c("jpg","jpeg","png","webp")) {
+      output$sl_photo_feedback <- renderText("Unsupported file type.")
+      return()
+    }
+    new_name <- sprintf("sw%s_%s.%s",
+      input$sl_sowing, format(Sys.time(), "%Y%m%d%H%M%S"), ext)
+    file.copy(files$datapath[1], file.path(PHOTO_DIR, new_name))
+    con <- get_con()
+    dbExecute(con,
+      "INSERT INTO photos (plant_id, sowing_id, photo_date, file_name, caption) VALUES (1,?,?,?,'')",
+      list(as.integer(input$sl_sowing), as.character(input$sl_date), new_name))
+    dbDisconnect(con)
+    output$sl_photo_feedback <- renderText(
+      "✓ Photo saved. Click the sowing row in Sowing Records to see it.")
+  })
+
   observeEvent(input$se_submit,{
     req(input$sl_sowing!=""); con <- get_con(); on.exit(dbDisconnect(con))
     dbExecute(con,"INSERT INTO sowing_events (sowing_id,event_date,event_type,notes) VALUES (?,?,?,?)",
@@ -1927,10 +2194,13 @@ server <- function(input, output, session) {
     output$se_feedback <- renderText("\u2713 Event saved."); bump()
   })
 
+
+
   output$sl_history <- renderDT({
     refresh(); req(input$sl_sowing!="")
     con <- get_con(); on.exit(dbDisconnect(con))
     df  <- dbGetQuery(con,sprintf("SELECT sc.id,sc.count_date AS date,sc.n_surviving,ROUND(CAST(sc.n_surviving AS REAL)/NULLIF(s.n_seeds,0)*100,1) AS pct_surviving,sc.notes FROM seedling_counts sc JOIN sowings s ON sc.sowing_id=s.id WHERE sc.sowing_id=%s ORDER BY sc.count_date",input$sl_sowing))
+    df$date <- sapply(df$date, fmt_date)
     datatable(df,selection="single",rownames=FALSE,options=list(pageLength=10,scrollX=TRUE))
   })
 
@@ -1967,6 +2237,7 @@ server <- function(input, output, session) {
     refresh(); req(input$sl_sowing!="")
     con <- get_con(); on.exit(dbDisconnect(con))
     df  <- dbGetQuery(con,sprintf("SELECT event_date AS date,event_type AS type,notes FROM sowing_events WHERE sowing_id=%s ORDER BY event_date DESC",input$sl_sowing))
+    df$date <- sapply(df$date, fmt_date)
     datatable(df,rownames=FALSE,options=list(pageLength=8,scrollX=TRUE))
   })
 
@@ -2040,6 +2311,8 @@ server <- function(input, output, session) {
   output$graduated_plants <- renderDT({
     refresh(); con <- get_con(); on.exit(dbDisconnect(con))
     df <- dbGetQuery(con,"SELECT s.genus,s.species,s.sow_date,p.id AS plant_id,p.cultivar,p.acquired AS potted_up,p.status FROM plants p JOIN sowings s ON p.sowing_id=s.id ORDER BY s.sow_date DESC,p.acquired")
+    df$sow_date  <- sapply(df$sow_date,  fmt_date)
+    df$potted_up <- sapply(df$potted_up, fmt_date)
     datatable(df,rownames=FALSE,options=list(pageLength=10,scrollX=TRUE))
   })
 
@@ -2069,7 +2342,8 @@ server <- function(input, output, session) {
       supplier="Supplier",dormancy="Dormancy",toxicity="Toxicity",notes="Notes",llifle_url="Llifle")
     lines <- list()
     if("genus_species" %in% fields)
-      lines[[length(lines)+1]] <- tags$div(style=paste0("font-weight:bold;font-size:",font,"pt;line-height:1.3;"),name)
+      lines[[length(lines)+1]] <- tags$div(
+        style=paste0("font-weight:bold;font-style:italic;font-size:",font+2L,"pt;line-height:1.3;"),name)
     for(f in setdiff(fields,"genus_species")){
       val <- na_str(r[[f]]); if(nchar(val)==0) next
       lines[[length(lines)+1]] <- tags$div(
